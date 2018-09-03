@@ -1,0 +1,56 @@
+---
+title: "miRNA and siRNA modelling"
+output: html_notebook
+---
+
+
+```{r setup}
+library(deSolve)
+library(tidyverse)
+```
+
+Using nM as unit, constants from Zamore 2015
+
+```{r}
+nanomole <- 6.022e14
+
+
+params_miRNA <- c(
+  K_M = 1.7,#e-9,
+  k_cat = 7.8e-2,
+  #k_on = 3.9e8,
+  E_0 = 1)
+
+params_siRNA <- params_miRNA
+params_siRNA["k_cat"] <- params_siRNA["k_cat"] * 5
+
+#params_miRNA["k_off"] <- params_miRNA["K_M"] * params_miRNA["k_on"] - params_miRNA["k_cat"]
+params_miRNA["V_max"] <- params_miRNA["k_cat"] * params_miRNA["E_0"]
+params_siRNA["V_max"] <- params_siRNA["k_cat"] * params_siRNA["E_0"]
+
+RNA_count_normal <- 5000
+state <- c(target = RNA_count_normal / nanomole)
+
+mm_cleaveage <- function(t, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    rate_product <- (V_max * target) / (K_M + target)
+    list(-rate_product)
+  })
+}
+
+times <- seq(0,60*30, length.out = 100)
+out.miRNA <- ode(y = state, times = times, func = mm_cleaveage, parms = params_miRNA)
+out.siRNA <- ode(y = state, times = times, func = mm_cleaveage, parms = params_siRNA)
+
+out.miRNA %>% as.data.frame() %>% rename(target.miRNA = target) %>% mutate(target.siRNA = out.siRNA[,"target"]) %>% gather("type", "value", -time) %>% ggplot(aes(x = time, y = value, color = type)) + geom_line() + ggtitle(paste0("Init count = ", RNA_count_normal))
+
+RNA_count_oocyte <- 5e15
+state <- c(target = RNA_count_oocyte / nanomole)
+out.miRNA.oo <- ode(y = state, times = times, func = mm_cleaveage, parms = params_miRNA)
+out.siRNA.oo <- ode(y = state, times = times, func = mm_cleaveage, parms = params_siRNA)
+
+out.miRNA.oo %>% as.data.frame() %>% rename(target.miRNA = target) %>% mutate(target.siRNA = out.siRNA.oo[,"target"]) %>% gather("type", "value", -time) %>% ggplot(aes(x = time, y = value, color = type)) + geom_line() + ggtitle(paste0("Init count = ", RNA_count_oocyte))
+
+```
+
+
