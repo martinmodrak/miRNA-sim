@@ -15,6 +15,17 @@ proteins in mammalian development
 
 cell radius / volume guessed
 
+miRNA does not deplete in ooczt ine  20h
+miRNA silencing hapens on the order of hours
+Need to consider competition with siRNAs and loading unloading
+AGO + siRNA will stay loaded, AGO + miRNA might not
+AGO + miRNA has intermediate stages
+
+Denzler has total miRNA to siRNA counts (hopefully). 
+Somatic cell has only miRNA (but siRNA can be induced)
+
+miRNA seed vs. seed and something
+
 ```{r}
 nanomole <- 6.022e14
 
