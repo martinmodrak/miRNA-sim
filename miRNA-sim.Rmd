@@ -9,48 +9,90 @@ library(deSolve)
 library(tidyverse)
 ```
 
-Using nM as unit, constants from Zamore 2015
+Using nM as unit, K_m and k_cat from Zamore 2015.
+AGO abundance (E_0) from Wang et al. 2012 Quantitative functions of Argonaute
+proteins in mammalian development
+
+cell radius / volume guessed
 
 ```{r}
 nanomole <- 6.022e14
 
-
-params_miRNA <- c(
-  K_M = 1.7,#e-9,
+params_miRNA_base <- c(
+  K_M = 1.7,
   k_cat = 7.8e-2,
-  #k_on = 3.9e8,
-  E_0 = 1)
+  k_on = 3.9e8,
+  E_0_count = 1.7e5 / nanomole)
 
-params_siRNA <- params_miRNA
-params_siRNA["k_cat"] <- params_siRNA["k_cat"] * 5
+params_siRNA_base <- params_miRNA_base
+params_siRNA_base["k_cat"] <- params_siRNA_base["k_cat"] * 5
 
-#params_miRNA["k_off"] <- params_miRNA["K_M"] * params_miRNA["k_on"] - params_miRNA["k_cat"]
-params_miRNA["V_max"] <- params_miRNA["k_cat"] * params_miRNA["E_0"]
-params_siRNA["V_max"] <- params_siRNA["k_cat"] * params_siRNA["E_0"]
+params_miRNA_base["k_off"] <- params_miRNA_base["K_M"] * params_miRNA_base["k_on"] - params_miRNA_base["k_cat"]
+params_siRNA_base["k_off"] <- params_miRNA_base["K_M"] * params_miRNA_base["k_on"] - params_miRNA_base["k_cat"]
 
 RNA_count_normal <- 5000
-state <- c(target = RNA_count_normal / nanomole)
+cell_radius <- 10e-6 
+cell_volume <- (4/3)*pi* cell_radius^3
+
+RNA_count_oocyte <- 5e5
+oocyte_radius <- 80e-6 
+oocyte_volume <- (4/3)*pi* oocyte_radius^3
+
+times <- seq(0,10, length.out = 100)
+
+```
+
+
+```{r}
+
+state <- c(target = RNA_count_normal / (nanomole * cell_volume))
 
 mm_cleaveage <- function(t, state, parameters) {
   with(as.list(c(state, parameters)), {
+    V_max <- k_cat * (E_0_count / cell_volume)
     rate_product <- (V_max * target) / (K_M + target)
     list(-rate_product)
   })
 }
 
-times <- seq(0,60*30, length.out = 100)
+
+params_miRNA <- params_miRNA_base
+params_miRNA["cell_volume"] <- cell_volume
+
+params_siRNA <- params_siRNA_base
+params_siRNA["cell_volume"] <- cell_volume
+
 out.miRNA <- ode(y = state, times = times, func = mm_cleaveage, parms = params_miRNA)
 out.siRNA <- ode(y = state, times = times, func = mm_cleaveage, parms = params_siRNA)
 
-out.miRNA %>% as.data.frame() %>% rename(target.miRNA = target) %>% mutate(target.siRNA = out.siRNA[,"target"]) %>% gather("type", "value", -time) %>% ggplot(aes(x = time, y = value, color = type)) + geom_line() + ggtitle(paste0("Init count = ", RNA_count_normal))
+out.miRNA %>% as.data.frame() %>% rename(target.miRNA = target) %>% mutate(target.siRNA = out.siRNA[,"target"]) %>% gather("type", "value", -time) %>% ggplot(aes(x = time, y = value, color = type)) + geom_line() + ggtitle(paste0("Init count = ", RNA_count_normal, " cell volume: ", cell_volume))
 
-RNA_count_oocyte <- 5e15
-state <- c(target = RNA_count_oocyte / nanomole)
+state <- c(target = RNA_count_oocyte / (nanomole * oocyte_volume))
+
+params_miRNA <- params_miRNA_base
+params_miRNA["cell_volume"] <- oocyte_volume
+
+params_siRNA <- params_siRNA_base
+params_siRNA["cell_volume"] <- oocyte_volume
+
 out.miRNA.oo <- ode(y = state, times = times, func = mm_cleaveage, parms = params_miRNA)
 out.siRNA.oo <- ode(y = state, times = times, func = mm_cleaveage, parms = params_siRNA)
 
-out.miRNA.oo %>% as.data.frame() %>% rename(target.miRNA = target) %>% mutate(target.siRNA = out.siRNA.oo[,"target"]) %>% gather("type", "value", -time) %>% ggplot(aes(x = time, y = value, color = type)) + geom_line() + ggtitle(paste0("Init count = ", RNA_count_oocyte))
+out.miRNA.oo %>% as.data.frame() %>% rename(target.miRNA = target) %>% mutate(target.siRNA = out.siRNA.oo[,"target"]) %>% gather("type", "value", -time) %>% ggplot(aes(x = time, y = value, color = type)) + geom_line() + ggtitle(paste0("Init count = ", RNA_count_oocyte, ", cell volume: ", oocyte_volume))
 
 ```
 
+```{r}
+cleaveage_synthesis <- function(t, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    enzyme <- -k_on * enzyme * target + k_off * complex + k_cat * complex
+    target <- -k_on * enzyme * target + k_off * complex +                  (synthesis / cell_volume)
+    complex <- k_on * enzyme * target - k_off * complex - k_cat * complex
+    list(enzyme, target, complex)
+  })
+}
+
+
+
+```
 
