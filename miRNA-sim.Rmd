@@ -7,6 +7,7 @@ output: html_notebook
 ```{r setup}
 library(deSolve)
 library(tidyverse)
+library(cowplot)
 ```
 
 Using nM as unit, K_m and k_cat from Zamore 2015.
@@ -15,6 +16,7 @@ proteins in mammalian development
 
 cell radius / volume guessed
 
+Notes 2018-09-05:
 miRNA does not deplete in ooczt ine  20h
 miRNA silencing hapens on the order of hours
 Need to consider competition with siRNAs and loading unloading
@@ -26,101 +28,173 @@ Somatic cell has only miRNA (but siRNA can be induced)
 
 miRNA seed vs. seed and something
 
+
+Further notes:
+In Zamore 2012 Fig. 7 the $K_M$ values are about a factor of 2.5 off from what would be calculated from $k_{on}$, $k_{off}$ and $k_cat$ - those are different experiments.
+
+
 ```{r}
-nanomole <- 6.022e14
+#mole_unit <- 6.022e20 #Mili mole
+# mole_unit_from_nano_mole <- 1e-6
+# mole_unit_from_mole <- 1e3
 
-params_miRNA_base <- c(
-  K_M = 1.7,
-  k_cat = 7.8e-2,
-  k_on = 3.9e8,
-  E_0_amount = 1.7e5 / nanomole)
+mole_unit <- 6.022e14 #nano mole
+mole_unit_from_nano_mole <- 1
+mole_unit_from_mole <- 1e9
 
-params_siRNA_base <- params_miRNA_base
-params_siRNA_base["k_cat"] <- params_siRNA_base["k_cat"] * 5
+K_M_siRNA <- 0.1 * mole_unit_from_nano_mole
+k_on_siRNA <- 3.6e7 / mole_unit_from_mole
+k_off_siRNA <- 7.7e-4
+k_cat_siRNA <- 8.1e-4
 
-params_miRNA_base["k_off"] <- params_miRNA_base["K_M"] * params_miRNA_base["k_on"] - params_miRNA_base["k_cat"]
-params_siRNA_base["k_off"] <- params_miRNA_base["K_M"] * params_miRNA_base["k_on"] - params_miRNA_base["k_cat"]
+k_on_miRNA <- 0.2e8 / mole_unit_from_mole
+k_off_miRNA <- 0.051e-2
 
-RNA_count_normal <- 5000
-cell_radius <- 10e-6 
-cell_volume <- (4/3)*pi* cell_radius^3
 
-RNA_count_oocyte <- 5e5
+AGO_somatic <- 1.7e5 / mole_unit
+AGO_oocyte <- AGO_somatic
+
+siRNA_target_somatic <- 5000 / mole_unit
+miRNA_target_somatic <- siRNA_target_somatic
+somatic_radius <- 10e-6 
+somatic_volume <- (4/3)*pi* somatic_radius^3
+
+siRNA_target_oocyte <- 5e5 / mole_unit
+miRNA_target_oocyte <- siRNA_target_oocyte
 oocyte_radius <- 80e-6 
 oocyte_volume <- (4/3)*pi* oocyte_radius^3
 
-times <- seq(0,10, length.out = 100)
+times <- seq(0,6*60*60, length.out = 100)
+
+
 
 ```
 
 
+## Simulating MM kinetics for siRNA yields very fast degradation
+
+Hence the loading step is likely limiting. Setting lower prop_AGO_available yields more reasonable results.
+
+
 ```{r}
-
-
-mm_cleaveage <- function(t, state, parameters) {
+one_step_degradation <- function(t, state, parameters) {
   with(as.list(c(state, parameters)), {
-    V_max <- k_cat * (E_0_amount / cell_volume)
-    rate_product <- (V_max * target) / (K_M + target)
-    list(-rate_product)
+    d_target <- -k_on * enzyme * target + k_off * complex 
+    d_enzyme <- -k_on * enzyme * target + k_off * complex + k_cat * complex
+    d_complex <- k_on * enzyme * target - k_off * complex - k_cat * complex
+    list(c(d_target, d_enzyme, d_complex))
   })
 }
 
+plot_ode_result <- function(out, title) {
+  out_tidy <- out %>% as.data.frame() %>% 
+    gather(type, concentration, -time) %>%
+    mutate(time_min = time / 60) 
+    
+  
+  uncleaved_plot <- out_tidy %>% 
+    filter(type != "enzyme") %>%
+    group_by(time_min) %>%
+    summarise(all_uncleaved = sum(concentration)) %>%
+    (function(data) { 
+      ggplot(data,aes(x = time_min, y = all_uncleaved)) + geom_line() +
+        ggtitle(paste0(title," uncleaved RNAs"))  +
+        ylim(0, max(data$all_uncleaved)) 
+    })
 
-params_miRNA <- params_miRNA_base
-params_miRNA["cell_volume"] <- cell_volume
-
-params_siRNA <- params_siRNA_base
-params_siRNA["cell_volume"] <- cell_volume
-
-state <- c(target = RNA_count_normal / (nanomole * cell_volume))
-
-out.miRNA <- ode(y = state, times = times, func = mm_cleaveage, parms = params_miRNA)
-out.siRNA <- ode(y = state, times = times, func = mm_cleaveage, parms = params_siRNA)
-
-out.miRNA %>% as.data.frame() %>% rename(target.miRNA = target) %>% mutate(target.siRNA = out.siRNA[,"target"]) %>% gather("type", "value", -time) %>% ggplot(aes(x = time, y = value, color = type)) + geom_line() + ggtitle(paste0("Init count = ", RNA_count_normal, " cell volume: ", cell_volume))
+  print(uncleaved_plot)
+  
+  auxiliary_plot <- 
+    ggplot(out_tidy, aes(x = time_min, y = concentration, color = type, linetype = type)) + geom_line() +
+    ggtitle(paste0(title," all reactants") ) + 
+    ylim(0, max(out_tidy$concentration))
 
 
-params_miRNA <- params_miRNA_base
-params_miRNA["cell_volume"] <- oocyte_volume
+  print(auxiliary_plot)
+}
 
-params_siRNA <- params_siRNA_base
-params_siRNA["cell_volume"] <- oocyte_volume
+for(prop_AGO_available_siRNA in c(1,0.5,0.1)) {
 
-state <- c(target = RNA_count_oocyte / (nanomole * oocyte_volume))
 
-out.miRNA.oo <- ode(y = state, times = times, func = mm_cleaveage, parms = params_miRNA)
-out.siRNA.oo <- ode(y = state, times = times, func = mm_cleaveage, parms = params_siRNA)
 
-out.miRNA.oo %>% as.data.frame() %>% rename(target.miRNA = target) %>% mutate(target.siRNA = out.siRNA.oo[,"target"]) %>% gather("type", "value", -time) %>% ggplot(aes(x = time, y = value, color = type)) + geom_line() + ggtitle(paste0("Init count = ", RNA_count_oocyte, ", cell volume: ", oocyte_volume))
+  params_siRNA <- c(k_cat = k_cat_siRNA, k_on = k_on_siRNA, k_off = k_off_siRNA)
+  
+  state <- c(target = siRNA_target_somatic / somatic_volume, enzyme = prop_AGO_available_siRNA * AGO_somatic / somatic_volume, complex = 0)
+  
+  out_siRNA <- ode(y = state, times = times, func = one_step_degradation, parms = params_siRNA)
+  
+  
+  
+  plot_ode_result(out_siRNA,paste0("Somatic, prop AGO = ", prop_AGO_available_siRNA))
+  
+  
+  
+  state <- c(target = siRNA_target_oocyte / oocyte_volume, enzyme = prop_AGO_available_siRNA * AGO_oocyte / oocyte_volume, complex = 0)
+  
+  out_siRNA_oo <- ode(y = state, times = times, func = one_step_degradation, parms = params_siRNA)
+  
+  plot_ode_result(out_siRNA_oo,paste0("Oocyte, prop AGO = ", prop_AGO_available_siRNA))
+}
+```
+
+Modulating just k_cat for miRNA is not enough - even though not everything is cleaved in somatic (even ignoring mRNA synthesis), I get noticeable cleavage in oocyte.
+
+```{r}
+prop_AGO_available_miRNA = 0.1
+
+
+k_cat_miRNA_one_step <- 0.2 * k_cat_siRNA
+params_miRNA_one_step <- c(k_cat = k_cat_miRNA_one_step, k_on = k_on_miRNA, k_off = k_off_miRNA)
+
+state <- c(target = miRNA_target_somatic / somatic_volume, enzyme = prop_AGO_available_miRNA * AGO_somatic / somatic_volume, complex = 0)
+
+out_miRNA_one_step_somatic <- ode(y = state, times = times, func = one_step_degradation, parms = params_miRNA_one_step)
+
+plot_ode_result(out_miRNA_one_step_somatic, "miRNA - somatic - one step deg.")
+
+
+state <- c(target = miRNA_target_oocyte / oocyte_volume, enzyme = prop_AGO_available_miRNA * AGO_oocyte / oocyte_volume, complex = 0)
+
+out_miRNA_one_step_oo <- ode(y = state, times = times, func = one_step_degradation, parms = params_miRNA_one_step)
+
+plot_ode_result(out_miRNA_one_step_oo, "miRNA - Oocyte - one step deg.")
 
 ```
 
-```{r}
-synthesis <- 0
+Adding one step to degradation is enough
 
-cleaveage_synthesis <- function(t, state, parameters) {
+```{r}
+k_cat_miRNA <- 0.2 * k_cat_siRNA
+k_intermediate_miRNA <- 1 * k_cat_siRNA
+
+times <- seq(0,6*60*60, length.out = 100) #Skip first few seconds as the system stabilizes
+
+
+two_step_degradation <- function(t, state, parameters) {
   with(as.list(c(state, parameters)), {
-    enzyme <- -k_on * enzyme * target + k_off * complex + k_cat * complex
-    target <- -k_on * enzyme * target + k_off * complex +                  (synthesis / cell_volume)
-    complex <- k_on * enzyme * target - k_off * complex - k_cat * complex
-    list(c(target, enzyme, complex))
+    d_target <- -k_on * enzyme * target + k_off * complex 
+    d_enzyme <- -k_on * enzyme * target + k_off * complex + k_cat * intermediate
+    d_complex <- k_on * enzyme * target - k_off * complex - k_intermediate * complex
+    d_intermediate <- k_intermediate * complex - k_cat * intermediate
+    list(c(d_target, d_enzyme, d_complex, d_intermediate))
   })
 }
 
-params_miRNA <- params_miRNA_base
-params_miRNA["cell_volume"] <- cell_volume
-params_miRNA["synthesis"] <- synthesis
+params_miRNA <- c(k_on = k_on_miRNA, k_off = k_off_miRNA, k_cat = k_cat_miRNA, k_intermediate = k_intermediate_miRNA)
 
-params_siRNA <- params_siRNA_base
-params_siRNA["cell_volume"] <- cell_volume
-params_siRNA["synthesis"] <- synthesis
+state_somatic <- c(target = miRNA_target_somatic / somatic_volume, enzyme = (prop_AGO_available_miRNA * AGO_somatic) / somatic_volume, complex = 0, intermediate = 0)
 
-state <- c(target = RNA_count_normal / (nanomole * oocyte_volume), enzyme = params_miRNA["E_0_amount"] / params_miRNA["cell_volume"], complex = 0)
+out_miRNA <- ode(y = state_somatic, times = times, func = two_step_degradation, parms = params_miRNA)
 
-out.miRNA <- ode(y = state, times = times, func = cleaveage_synthesis, parms = params_miRNA)
-out.siRNA <- ode(y = state, times = times, func = cleaveage_synthesis, parms = params_siRNA)
 
-out.miRNA %>% as.data.frame() %>% rename(target.miRNA = target) %>% mutate(target.siRNA = out.siRNA[,"target"]) %>% gather("type", "value", -time) %>% ggplot(aes(x = time, y = value, color = type)) + geom_line() + ggtitle(paste0("Init count = ", RNA_count_normal, " cell volume: ", cell_volume))
+
+plot_ode_result(out_miRNA, "Somatic")
+
+state_oo <- c(target = miRNA_target_oocyte / oocyte_volume, enzyme = (prop_AGO_available_miRNA * AGO_oocyte) / oocyte_volume, complex = 0, intermediate = 0)
+
+out_miRNA_oo <- ode(y = state_oo, times = times, func = two_step_degradation, parms = params_miRNA)
+
+plot_ode_result(out_miRNA_oo, "Oocyte")
 
 
 ```
