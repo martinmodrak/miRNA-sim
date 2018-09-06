@@ -32,6 +32,14 @@ miRNA seed vs. seed and something
 Further notes:
 In Zamore 2012 Fig. 7 the $K_M$ values are about a factor of 2.5 off from what would be calculated from $k_{on}$, $k_{off}$ and $k_cat$ - those are different experiments.
 
+Bosson 2014:
+Absolute levels of miRNAs for various cell types are estimated in the range of tens to 
+120,000 copies per cell
+
+This method provided target cpc estimates of 1,200 8-mers, 5,000 7-mers, and 22,000 6-
+mers on average for 3′ UTR sites of each active miRNA ESC family (Figure 3D, lines). For 
+reference to other cell types, these values correspond to 0.8%, 3.2%, and 14.1% of the total 
+mRNA concentration in the cell. 
 
 ```{r}
 #mole_unit <- 6.022e20 #Mili mole
@@ -41,30 +49,40 @@ In Zamore 2012 Fig. 7 the $K_M$ values are about a factor of 2.5 off from what w
 mole_unit <- 6.022e14 #nano mole
 mole_unit_from_nano_mole <- 1
 mole_unit_from_mole <- 1e9
+time_unit_from_sec <- 1/3600 #Use minute instead of seconds
 
 K_M_siRNA <- 0.1 * mole_unit_from_nano_mole
-k_on_siRNA <- 3.6e7 / mole_unit_from_mole
-k_off_siRNA <- 7.7e-4
-k_cat_siRNA <- 8.1e-4
+k_on_siRNA <- 3.6e7 / (mole_unit_from_mole * time_unit)
+k_off_siRNA <- 7.7e-4 / time_unit
+k_cat_siRNA <- 8.1e-4 / time_unit
 
-k_on_miRNA <- 0.2e8 / mole_unit_from_mole
-k_off_miRNA <- 0.051e-2
+k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit)
+k_off_miRNA <- 0.051e-2 / time_unit
 
 
 AGO_somatic <- 1.7e5 / mole_unit
 AGO_oocyte <- AGO_somatic
 
-siRNA_target_somatic <- 5000 / mole_unit
-miRNA_target_somatic <- siRNA_target_somatic
-somatic_radius <- 10e-6 
-somatic_volume <- (4/3)*pi* somatic_radius^3
+miRNA_target_proportion <- 0.2
+siRNA_target_proportion <- miRNA_target_proportion
 
-siRNA_target_oocyte <- 5e5 / mole_unit
-miRNA_target_oocyte <- siRNA_target_oocyte
-oocyte_radius <- 80e-6 
-oocyte_volume <- (4/3)*pi* oocyte_radius^3
+total_RNA_somatic <- 1e6 #5e5 - 1e6
+total_RNA_oocyte <- 25e6
 
-times <- seq(0,6*60*60, length.out = 100)
+miRNA_target_somatic <- total_RNA_somatic * miRNA_target_proportion / mole_unit
+siRNA_target_somatic <- total_RNA_somatic * siRNA_target_proportion / mole_unit
+#somatic_radius <- 10e-6 
+#somatic_volume <- (4/3)*pi* somatic_radius^3 * 1e3 #transforming from m^3 to litres
+somatic_volume <- 4.4e-12
+
+miRNA_target_oocyte <- total_RNA_oocyte * miRNA_target_proportion / mole_unit
+siRNA_target_oocyte <- total_RNA_somatic * siRNA_target_proportion / mole_unit
+
+#oocyte_radius <- 80e-6 
+#oocyte_volume <- (4/3)*pi* oocyte_radius^3 * 1e3 #transforming from m^3 to litres
+oocyte_volume <- 260e-12
+
+times <- seq(0,24*60*60 * time_unit_from_sec, length.out = 100)
 
 
 
@@ -89,15 +107,15 @@ one_step_degradation <- function(t, state, parameters) {
 plot_ode_result <- function(out, title) {
   out_tidy <- out %>% as.data.frame() %>% 
     gather(type, concentration, -time) %>%
-    mutate(time_min = time / 60) 
+    mutate(time_h = time / (3600 * time_unit_from_sec)) 
     
   
   uncleaved_plot <- out_tidy %>% 
     filter(type != "enzyme") %>%
-    group_by(time_min) %>%
+    group_by(time_h) %>%
     summarise(all_uncleaved = sum(concentration)) %>%
     (function(data) { 
-      ggplot(data,aes(x = time_min, y = all_uncleaved)) + geom_line() +
+      ggplot(data,aes(x = time_h, y = all_uncleaved)) + geom_line() +
         ggtitle(paste0(title," uncleaved RNAs"))  +
         ylim(0, max(data$all_uncleaved)) 
     })
@@ -105,7 +123,7 @@ plot_ode_result <- function(out, title) {
   print(uncleaved_plot)
   
   auxiliary_plot <- 
-    ggplot(out_tidy, aes(x = time_min, y = concentration, color = type, linetype = type)) + geom_line() +
+    ggplot(out_tidy, aes(x = time_h, y = concentration, color = type, linetype = type)) + geom_line() +
     ggtitle(paste0(title," all reactants") ) + 
     ylim(0, max(out_tidy$concentration))
 
@@ -137,9 +155,10 @@ for(prop_AGO_available_siRNA in c(1,0.5,0.1)) {
 }
 ```
 
-Modulating just k_cat for miRNA is not enough - even though not everything is cleaved in somatic (even ignoring mRNA synthesis), I get noticeable cleavage in oocyte.
+Modulating just k_cat for miRNA is enough - to get full miRNA efficiency at somatic cells but have negligible degradation in oocyte.
 
 ```{r}
+
 prop_AGO_available_miRNA = 0.1
 
 
@@ -161,13 +180,11 @@ plot_ode_result(out_miRNA_one_step_oo, "miRNA - Oocyte - one step deg.")
 
 ```
 
-Adding one step to degradation is enough
+Experimenting with two step reactions
 
 ```{r}
 k_cat_miRNA <- 0.2 * k_cat_siRNA
 k_intermediate_miRNA <- 1 * k_cat_siRNA
-
-times <- seq(0,6*60*60, length.out = 100) #Skip first few seconds as the system stabilizes
 
 
 two_step_degradation <- function(t, state, parameters) {
