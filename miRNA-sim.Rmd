@@ -49,15 +49,15 @@ mRNA concentration in the cell.
 mole_unit <- 6.022e14 #nano mole
 mole_unit_from_nano_mole <- 1
 mole_unit_from_mole <- 1e9
-time_unit_from_sec <- 1/3600 #Use minute instead of seconds
+time_unit_from_sec <- 1/3600 #Use hour instead of seconds
 
 K_M_siRNA <- 0.1 * mole_unit_from_nano_mole
-k_on_siRNA <- 3.6e7 / (mole_unit_from_mole * time_unit)
-k_off_siRNA <- 7.7e-4 / time_unit
-k_cat_siRNA <- 8.1e-4 / time_unit
+k_on_siRNA <- 3.6e7 / (mole_unit_from_mole * time_unit_from_sec)
+k_off_siRNA <- 7.7e-4 / time_unit_from_sec
+k_cat_siRNA <- 8.1e-4 / time_unit_from_sec
 
-k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit)
-k_off_miRNA <- 0.051e-2 / time_unit
+k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit_from_sec)
+k_off_miRNA <- 0.051e-2 / time_unit_from_sec
 
 
 AGO_somatic <- 1.7e5 / mole_unit
@@ -117,7 +117,7 @@ plot_ode_result <- function(out, title) {
     (function(data) { 
       ggplot(data,aes(x = time_h, y = all_uncleaved)) + geom_line() +
         ggtitle(paste0(title," uncleaved RNAs"))  +
-        ylim(0, max(data$all_uncleaved)) 
+        ylim(-1e-5, max(data$all_uncleaved)) 
     })
 
   print(uncleaved_plot)
@@ -125,7 +125,7 @@ plot_ode_result <- function(out, title) {
   auxiliary_plot <- 
     ggplot(out_tidy, aes(x = time_h, y = concentration, color = type, linetype = type)) + geom_line() +
     ggtitle(paste0(title," all reactants") ) + 
-    ylim(0, max(out_tidy$concentration))
+    ylim(-1e-5, max(out_tidy$concentration))
 
 
   print(auxiliary_plot)
