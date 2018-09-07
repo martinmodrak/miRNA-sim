@@ -59,42 +59,21 @@ k_cat_siRNA <- 8.1e-4 / time_unit_from_sec
 k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit_from_sec)
 k_off_miRNA <- 0.051e-2 / time_unit_from_sec
 
-
-AGO_somatic <- 1.7e5 / mole_unit
-AGO_oocyte <- AGO_somatic
-
-miRNA_target_proportion <- 0.2
-siRNA_target_proportion <- miRNA_target_proportion
+somatic_volume <- 4.4e-12
+oocyte_volume <- 260e-12
 
 total_RNA_somatic <- 1e6 #5e5 - 1e6
 total_RNA_oocyte <- 25e6
 
-miRNA_target_somatic <- total_RNA_somatic * miRNA_target_proportion / mole_unit
-siRNA_target_somatic <- total_RNA_somatic * siRNA_target_proportion / mole_unit
-#somatic_radius <- 10e-6 
-#somatic_volume <- (4/3)*pi* somatic_radius^3 * 1e3 #transforming from m^3 to litres
-somatic_volume <- 4.4e-12
+let7_somatic <- 5e4 / mole_unit
+let7_oocyte <- 3.5e4 / mole_unit
 
-miRNA_target_oocyte <- total_RNA_oocyte * miRNA_target_proportion / mole_unit
-siRNA_target_oocyte <- total_RNA_somatic * siRNA_target_proportion / mole_unit
-
-#oocyte_radius <- 80e-6 
-#oocyte_volume <- (4/3)*pi* oocyte_radius^3 * 1e3 #transforming from m^3 to litres
-oocyte_volume <- 260e-12
+let7_targets_somatic <- (1380+2884+20414) / mole_unit #8-mer, 7-mer and 6-mers respectively from Bosson 2014
+let7_targets_oocyte <- let7_targets_somatic * (oocyte_volume / somatic_volume)
 
 times <- seq(0,24*60*60 * time_unit_from_sec, length.out = 100)
 
 
-
-```
-
-
-## Simulating MM kinetics for siRNA yields very fast degradation
-
-Hence the loading step is likely limiting. Setting lower prop_AGO_available yields more reasonable results.
-
-
-```{r}
 one_step_degradation <- function(t, state, parameters) {
   with(as.list(c(state, parameters)), {
     d_target <- -k_on * enzyme * target + k_off * complex 
@@ -131,60 +110,55 @@ plot_ode_result <- function(out, title) {
   print(auxiliary_plot)
 }
 
-for(prop_AGO_available_siRNA in c(1,0.5,0.1)) {
-
-
-
-  params_siRNA <- c(k_cat = k_cat_siRNA, k_on = k_on_siRNA, k_off = k_off_siRNA)
-  
-  state <- c(target = siRNA_target_somatic / somatic_volume, enzyme = prop_AGO_available_siRNA * AGO_somatic / somatic_volume, complex = 0)
-  
-  out_siRNA <- ode(y = state, times = times, func = one_step_degradation, parms = params_siRNA)
-  
-  
-  
-  plot_ode_result(out_siRNA,paste0("Somatic, prop AGO = ", prop_AGO_available_siRNA))
-  
-  
-  
-  state <- c(target = siRNA_target_oocyte / oocyte_volume, enzyme = prop_AGO_available_siRNA * AGO_oocyte / oocyte_volume, complex = 0)
-  
-  out_siRNA_oo <- ode(y = state, times = times, func = one_step_degradation, parms = params_siRNA)
-  
-  plot_ode_result(out_siRNA_oo,paste0("Oocyte, prop AGO = ", prop_AGO_available_siRNA))
-}
 ```
 
-Modulating just k_cat for miRNA is enough - to get full miRNA efficiency at somatic cells but have negligible degradation in oocyte.
+
+## Sanity check: simulating MM kinetics for siRNA 
+
+We want to get complete degradation with siRNA in oocyte in a reasonable time
 
 ```{r}
 
-prop_AGO_available_miRNA = 0.1
+hypothetical_siRNA_oocyte <- let7_oocyte
+hypothetical_siRNA_targets_oocyte <- let7_targets_oocyte
+
+params_siRNA <- c(k_cat = k_cat_siRNA, k_on = k_on_siRNA, k_off = k_off_siRNA)
 
 
-k_cat_miRNA_one_step <- 0.2 * k_cat_siRNA
-params_miRNA_one_step <- c(k_cat = k_cat_miRNA_one_step, k_on = k_on_miRNA, k_off = k_off_miRNA)
+state <- c(target = hypothetical_siRNA_targets_oocyte / oocyte_volume, enzyme = hypothetical_siRNA_oocyte / oocyte_volume, complex = 0)
 
-state <- c(target = miRNA_target_somatic / somatic_volume, enzyme = prop_AGO_available_miRNA * AGO_somatic / somatic_volume, complex = 0)
+out_siRNA <- ode(y = state, times = times, func = one_step_degradation, parms = params_siRNA)
+plot_ode_result(out_siRNA,paste0("Hypothethical siRNA, oocyte, prop AGO = ", prop_available_siRNA))
+  
+```
 
-out_miRNA_one_step_somatic <- ode(y = state, times = times, func = one_step_degradation, parms = params_miRNA_one_step)
+Modulating just k_cat for let7 is enough - to get full let7 efficiency at somatic cells but have negligible degradation in oocyte for $k_{cat,\mathrm{let7}} \in (0.05 * k_{cat,\mathrm{siRNA}}, 0.3 * k_{cat,\mathrm{siRNA}})$.
 
-plot_ode_result(out_miRNA_one_step_somatic, "miRNA - somatic - one step deg.")
-
-
-state <- c(target = miRNA_target_oocyte / oocyte_volume, enzyme = prop_AGO_available_miRNA * AGO_oocyte / oocyte_volume, complex = 0)
-
-out_miRNA_one_step_oo <- ode(y = state, times = times, func = one_step_degradation, parms = params_miRNA_one_step)
-
-plot_ode_result(out_miRNA_one_step_oo, "miRNA - Oocyte - one step deg.")
-
+```{r}
+for(k_cat_coef in c(0.05,0.2,0.3)) {
+  k_cat_let7_one_step <- k_cat_coef * k_cat_siRNA
+  params_let7_one_step <- c(k_cat = k_cat_let7_one_step, k_on = k_on_miRNA, k_off = k_off_miRNA)
+  
+  state <- c(target = let7_targets_somatic / somatic_volume, enzyme = let7_somatic / somatic_volume, complex = 0)
+  
+  out_let7_one_step_somatic <- ode(y = state, times = times, func = one_step_degradation, parms = params_let7_one_step)
+  
+  plot_ode_result(out_let7_one_step_somatic, paste0("let7 - somatic k_cat_coef = ", k_cat_coef))
+  
+  
+  state <- c(target = let7_targets_oocyte / oocyte_volume, enzyme = let7_oocyte / oocyte_volume, complex = 0)
+  
+  out_let7_one_step_oo <- ode(y = state, times = times, func = one_step_degradation, parms = params_let7_one_step)
+  
+  plot_ode_result(out_let7_one_step_oo, paste0("let7 - oocyte k_cat_coef = ", k_cat_coef))
+}
 ```
 
 Experimenting with two step reactions
 
 ```{r}
-k_cat_miRNA <- 0.2 * k_cat_siRNA
-k_intermediate_miRNA <- 1 * k_cat_siRNA
+k_cat_let7_two_step <- 0.2 * k_cat_siRNA
+k_intermediate_let7 <- 1 * k_cat_siRNA
 
 
 two_step_degradation <- function(t, state, parameters) {
@@ -197,21 +171,21 @@ two_step_degradation <- function(t, state, parameters) {
   })
 }
 
-params_miRNA <- c(k_on = k_on_miRNA, k_off = k_off_miRNA, k_cat = k_cat_miRNA, k_intermediate = k_intermediate_miRNA)
+params_let7 <- c(k_on = k_on_miRNA, k_off = k_off_miRNA, k_cat = k_cat_let7_two_step, k_intermediate = k_intermediate_let7)
 
-state_somatic <- c(target = miRNA_target_somatic / somatic_volume, enzyme = (prop_AGO_available_miRNA * AGO_somatic) / somatic_volume, complex = 0, intermediate = 0)
+state_somatic <- c(target = let7_targets_oocyte / somatic_volume, enzyme = let7_somatic / somatic_volume, complex = 0, intermediate = 0)
 
-out_miRNA <- ode(y = state_somatic, times = times, func = two_step_degradation, parms = params_miRNA)
+out_let7 <- ode(y = state_somatic, times = times, func = two_step_degradation, parms = params_let7)
 
 
 
-plot_ode_result(out_miRNA, "Somatic")
+plot_ode_result(out_let7, "Somatic")
 
-state_oo <- c(target = miRNA_target_oocyte / oocyte_volume, enzyme = (prop_AGO_available_miRNA * AGO_oocyte) / oocyte_volume, complex = 0, intermediate = 0)
+state_oo <- c(target = let7_targets_oocyte / oocyte_volume, enzyme = let7_oocyte / oocyte_volume, complex = 0, intermediate = 0)
 
-out_miRNA_oo <- ode(y = state_oo, times = times, func = two_step_degradation, parms = params_miRNA)
+out_let7_oo <- ode(y = state_oo, times = times, func = two_step_degradation, parms = params_let7)
 
-plot_ode_result(out_miRNA_oo, "Oocyte")
+plot_ode_result(out_let7_oo, "Oocyte")
 
 
 ```
