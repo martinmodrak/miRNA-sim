@@ -12,7 +12,10 @@ library(cowplot)
 
 # Outstanding questions
 
-- do we measure uncleave target RNA or free target mRNA? (matters only in somatice cells)
+- do we measure uncleave target RNA or free target mRNA? (matters only in 3T3e cells)
+  We measure protein (AGO bound is repressed)
+- What exactly is measured? All sequences complementary to let7?
+- total RNA MSC?
 
 # Assumptions
 
@@ -26,7 +29,7 @@ AGO + siRNA will stay loaded, AGO + miRNA might not
 AGO + miRNA has intermediate stages
 
 Denzler has total miRNA to siRNA counts (hopefully). 
-Somatic cell has only miRNA (but siRNA can be induced)
+3T3 cell has only miRNA (but siRNA can be induced)
 
 miRNA seed vs. seed and something
 
@@ -65,17 +68,21 @@ k_cat_siRNA <- 8.1e-4 / time_unit_from_sec
 k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit_from_sec)
 k_off_miRNA <- 0.051e-2 / time_unit_from_sec
 
-somatic_volume <- 4.4e-12
-oocyte_volume <- 260e-12
 
-total_RNA_somatic <- 1e6 #5e5 - 1e6
+volume_3T3 <- 4.4e-12
+volume_oocyte <- 260e-12
+
+total_RNA_ESC <- 158000 #Bosson 2014
+total_RNA_ESC <- 750000 #Bosson 2014 Fig S1
+total_RNA_3T3 <- 1e6 #5e5 - 1e6
 total_RNA_oocyte <- 25e6
 
-let7_somatic <- 5e4 / mole_unit
+let7_3T3 <- 5e4 / mole_unit
 let7_oocyte <- 3.5e4 / mole_unit
 
-let7_targets_somatic <- (1380+2884+20414) / mole_unit #8-mer, 7-mer and 6-mers respectively from Bosson 2014
-let7_targets_oocyte <- let7_targets_somatic * (oocyte_volume / somatic_volume)
+let7_targets_MSC <- (1380+2884+20414) / mole_unit #8-mer, 7-mer and 6-mers respectively from Bosson 2014
+let7_targets_3T3 <-  let7_targets_MSC
+let7_targets_oocyte <- let7_targets_3T3 * (volume_oocyte / volume_3T3)
 
 times <- seq(0,24*60*60 * time_unit_from_sec, length.out = 100)
 
@@ -120,21 +127,21 @@ plot_ode_result <- function(out, title) {
 
 # let7 modelling
 
-Modulating just k_cat for let7 is enough - to get full let7 efficiency at somatic cells but have negligible degradation in oocyte for $k_{cat,\mathrm{let7}} \in (0.05 * k_{cat,\mathrm{siRNA}}, 0.3 * k_{cat,\mathrm{siRNA}})$.
+Modulating just k_cat for let7 is enough - to get full let7 efficiency at 3T3 cells but have negligible degradation in oocyte for $k_{cat,\mathrm{let7}} \in (0.05 * k_{cat,\mathrm{siRNA}}, 0.3 * k_{cat,\mathrm{siRNA}})$.
 
 ```{r}
 for(k_cat_coef in c(0.05,0.2,0.3)) {
   k_cat_let7_one_step <- k_cat_coef * k_cat_siRNA
   params_let7_one_step <- c(k_cat = k_cat_let7_one_step, k_on = k_on_miRNA, k_off = k_off_miRNA)
   
-  state <- c(target = let7_targets_somatic / somatic_volume, enzyme = let7_somatic / somatic_volume, complex = 0)
+  state <- c(target = let7_targets_3T3 / volume_3T3, enzyme = let7_3T3 / volume_3T3, complex = 0)
   
-  out_let7_one_step_somatic <- ode(y = state, times = times, func = one_step_degradation, parms = params_let7_one_step)
+  out_let7_one_step_3T3 <- ode(y = state, times = times, func = one_step_degradation, parms = params_let7_one_step)
   
-  plot_ode_result(out_let7_one_step_somatic, paste0("let7 - somatic k_cat_coef = ", k_cat_coef))
+  plot_ode_result(out_let7_one_step_3T3, paste0("let7 - 3T3 k_cat_coef = ", k_cat_coef))
   
   
-  state <- c(target = let7_targets_oocyte / oocyte_volume, enzyme = let7_oocyte / oocyte_volume, complex = 0)
+  state <- c(target = let7_targets_oocyte / volume_oocyte, enzyme = let7_oocyte / volume_oocyte, complex = 0)
   
   out_let7_one_step_oo <- ode(y = state, times = times, func = one_step_degradation, parms = params_let7_one_step)
   
@@ -154,7 +161,7 @@ hypothetical_siRNA_targets_oocyte <- let7_targets_oocyte
 params_siRNA <- c(k_cat = k_cat_siRNA, k_on = k_on_siRNA, k_off = k_off_siRNA)
 
 
-state <- c(target = hypothetical_siRNA_targets_oocyte / oocyte_volume, enzyme = hypothetical_siRNA_oocyte / oocyte_volume, complex = 0)
+state <- c(target = hypothetical_siRNA_targets_oocyte / volume_oocyte, enzyme = hypothetical_siRNA_oocyte / volume_oocyte, complex = 0)
 
 out_siRNA <- ode(y = state, times = times, func = one_step_degradation, parms = params_siRNA)
 plot_ode_result(out_siRNA,paste0("Hypothethical siRNA, oocyte"))
@@ -180,15 +187,15 @@ two_step_degradation <- function(t, state, parameters) {
 
 params_let7 <- c(k_on = k_on_miRNA, k_off = k_off_miRNA, k_cat = k_cat_let7_two_step, k_intermediate = k_intermediate_let7)
 
-state_somatic <- c(target = let7_targets_oocyte / somatic_volume, enzyme = let7_somatic / somatic_volume, complex = 0, intermediate = 0)
+state_3T3 <- c(target = let7_targets_oocyte / volume_3T3, enzyme = let7_3T3 / volume_3T3, complex = 0, intermediate = 0)
 
-out_let7 <- ode(y = state_somatic, times = times, func = two_step_degradation, parms = params_let7)
+out_let7 <- ode(y = state_3T3, times = times, func = two_step_degradation, parms = params_let7)
 
 
 
-plot_ode_result(out_let7, "Somatic")
+plot_ode_result(out_let7, "3T3")
 
-state_oo <- c(target = let7_targets_oocyte / oocyte_volume, enzyme = let7_oocyte / oocyte_volume, complex = 0, intermediate = 0)
+state_oo <- c(target = let7_targets_oocyte / volume_oocyte, enzyme = let7_oocyte / volume_oocyte, complex = 0, intermediate = 0)
 
 out_let7_oo <- ode(y = state_oo, times = times, func = two_step_degradation, parms = params_let7)
 
