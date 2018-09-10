@@ -10,11 +10,13 @@ library(tidyverse)
 library(cowplot)
 ```
 
-Using nM as unit, K_m and k_cat from Zamore 2015.
-AGO abundance (E_0) from Wang et al. 2012 Quantitative functions of Argonaute
-proteins in mammalian development
+# Outstanding questions
 
-cell radius / volume guessed
+- do we measure uncleave target RNA or free target mRNA? (matters only in somatice cells)
+
+# Assumptions
+
+Using nM/l as unit, K_m and k_cat from Zamore 2015.
 
 Notes 2018-09-05:
 miRNA does not deplete in ooczt ine  20h
@@ -41,11 +43,15 @@ mers on average for 3′ UTR sites of each active miRNA ESC family (Figure 3D, l
 reference to other cell types, these values correspond to 0.8%, 3.2%, and 14.1% of the total 
 mRNA concentration in the cell. 
 
+Assuming AGO is not rate limiting, we simplify the reaction and treat the  specific miRNA/siRNA species as enzyme in the reactions.
+
 ```{r}
 #mole_unit <- 6.022e20 #Mili mole
 # mole_unit_from_nano_mole <- 1e-6
 # mole_unit_from_mole <- 1e3
 
+
+#Using litre as volume unit! (since constants are in moles per litre)
 mole_unit <- 6.022e14 #nano mole
 mole_unit_from_nano_mole <- 1
 mole_unit_from_mole <- 1e9
@@ -112,25 +118,7 @@ plot_ode_result <- function(out, title) {
 
 ```
 
-
-## Sanity check: simulating MM kinetics for siRNA 
-
-We want to get complete degradation with siRNA in oocyte in a reasonable time
-
-```{r}
-
-hypothetical_siRNA_oocyte <- let7_oocyte
-hypothetical_siRNA_targets_oocyte <- let7_targets_oocyte
-
-params_siRNA <- c(k_cat = k_cat_siRNA, k_on = k_on_siRNA, k_off = k_off_siRNA)
-
-
-state <- c(target = hypothetical_siRNA_targets_oocyte / oocyte_volume, enzyme = hypothetical_siRNA_oocyte / oocyte_volume, complex = 0)
-
-out_siRNA <- ode(y = state, times = times, func = one_step_degradation, parms = params_siRNA)
-plot_ode_result(out_siRNA,paste0("Hypothethical siRNA, oocyte, prop AGO = ", prop_available_siRNA))
-  
-```
+# let7 modelling
 
 Modulating just k_cat for let7 is enough - to get full let7 efficiency at somatic cells but have negligible degradation in oocyte for $k_{cat,\mathrm{let7}} \in (0.05 * k_{cat,\mathrm{siRNA}}, 0.3 * k_{cat,\mathrm{siRNA}})$.
 
@@ -154,7 +142,26 @@ for(k_cat_coef in c(0.05,0.2,0.3)) {
 }
 ```
 
-Experimenting with two step reactions
+# Sanity check: simulating MM kinetics for siRNA 
+
+We want to get complete degradation with siRNA in oocyte in a reasonable time. Assuming siRNA with the same concentration as let7
+
+```{r}
+
+hypothetical_siRNA_oocyte <- let7_oocyte
+hypothetical_siRNA_targets_oocyte <- let7_targets_oocyte
+
+params_siRNA <- c(k_cat = k_cat_siRNA, k_on = k_on_siRNA, k_off = k_off_siRNA)
+
+
+state <- c(target = hypothetical_siRNA_targets_oocyte / oocyte_volume, enzyme = hypothetical_siRNA_oocyte / oocyte_volume, complex = 0)
+
+out_siRNA <- ode(y = state, times = times, func = one_step_degradation, parms = params_siRNA)
+plot_ode_result(out_siRNA,paste0("Hypothethical siRNA, oocyte"))
+  
+```
+
+# Experimenting with two step reactions
 
 ```{r}
 k_cat_let7_two_step <- 0.2 * k_cat_siRNA
