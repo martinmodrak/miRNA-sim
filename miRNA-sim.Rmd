@@ -7,6 +7,7 @@ output: html_notebook
 ```{r setup}
 library(deSolve)
 library(tidyverse)
+library(ggridges)
 library(cowplot)
 ```
 
@@ -68,24 +69,23 @@ k_cat_siRNA <- 8.1e-4 / time_unit_from_sec
 k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit_from_sec)
 k_off_miRNA <- 0.051e-2 / time_unit_from_sec
 
+cells <- tibble(
+  name = c("3T3","oocyte"),
+  volume = c(4.4e-12, 260e-12),
+  total_RNA = c(5e5,25e6)
+)
 
-volume_3T3 <- 4.4e-12
-volume_oocyte <- 260e-12
+target_pools <- tibble(fraction_of_total_RNA = c(0.1,0.2))
 
-total_RNA_ESC <- 158000 #Bosson 2014
-total_RNA_ESC <- 750000 #Bosson 2014 Fig S1
-total_RNA_3T3 <- 1e6 #5e5 - 1e6
-total_RNA_oocyte <- 25e6
+miRNA_counts <- tibble(miRNA_count = c(5e4,1e4,5e3))
 
-let7_3T3 <- 5e4 / mole_unit
-let7_oocyte <- 3.5e4 / mole_unit
+k_cat_coeff_step = 0.05
+k_cat_coeffs <- tibble(k_cat_coeff = seq(0.05,1, by = k_cat_coeff_step))
 
-let7_targets_MSC <- (1380+2884+20414) / mole_unit #8-mer, 7-mer and 6-mers respectively from Bosson 2014
-let7_targets_3T3 <-  let7_targets_MSC
-let7_targets_oocyte <- let7_targets_3T3 * (volume_oocyte / volume_3T3)
+all_conditions <- crossing(cells, target_pools, miRNA_counts, k_cat_coeffs)
 
-times <- seq(0,24*60*60 * time_unit_from_sec, length.out = 100)
-
+times <- seq(0,24*60*60 * time_unit_from_sec, length.out = 101)
+time_step <- diff(times)[1]
 
 one_step_degradation <- function(t, state, parameters) {
   with(as.list(c(state, parameters)), {
@@ -130,77 +130,47 @@ plot_ode_result <- function(out, title) {
 Modulating just k_cat for let7 is enough - to get full let7 efficiency at 3T3 cells but have negligible degradation in oocyte for $k_{cat,\mathrm{let7}} \in (0.05 * k_{cat,\mathrm{siRNA}}, 0.3 * k_{cat,\mathrm{siRNA}})$.
 
 ```{r}
-for(k_cat_coef in c(0.05,0.2,0.3)) {
-  k_cat_let7_one_step <- k_cat_coef * k_cat_siRNA
-  params_let7_one_step <- c(k_cat = k_cat_let7_one_step, k_on = k_on_miRNA, k_off = k_off_miRNA)
+miRNA_sim_single <- function(condition) {
+  params <- c(k_cat = k_cat_siRNA * condition$k_cat_coeff, k_on = k_on_miRNA, k_off = k_off_miRNA)
   
-  state <- c(target = let7_targets_3T3 / volume_3T3, enzyme = let7_3T3 / volume_3T3, complex = 0)
+  state <- c(target = condition$total_RNA * condition$fraction_of_total_RNA / condition$volume, enzyme = condition$miRNA_count / condition$volume, complex = 0)
   
-  out_let7_one_step_3T3 <- ode(y = state, times = times, func = one_step_degradation, parms = params_let7_one_step)
-  
-  plot_ode_result(out_let7_one_step_3T3, paste0("let7 - 3T3 k_cat_coef = ", k_cat_coef))
-  
-  
-  state <- c(target = let7_targets_oocyte / volume_oocyte, enzyme = let7_oocyte / volume_oocyte, complex = 0)
-  
-  out_let7_one_step_oo <- ode(y = state, times = times, func = one_step_degradation, parms = params_let7_one_step)
-  
-  plot_ode_result(out_let7_one_step_oo, paste0("let7 - oocyte k_cat_coef = ", k_cat_coef))
-}
-```
+  out <- ode(y = state, times = times, func = one_step_degradation, parms = params)
 
-# Sanity check: simulating MM kinetics for siRNA 
+  tidy_out <- out %>% as.data.frame() %>%
+    gather(type, concentration, -time) %>%
+    mutate(time_h = time / (3600 * time_unit_from_sec)) 
 
-We want to get complete degradation with siRNA in oocyte in a reasonable time. Assuming siRNA with the same concentration as let7
-
-```{r}
-
-hypothetical_siRNA_oocyte <- let7_oocyte
-hypothetical_siRNA_targets_oocyte <- let7_targets_oocyte
-
-params_siRNA <- c(k_cat = k_cat_siRNA, k_on = k_on_siRNA, k_off = k_off_siRNA)
-
-
-state <- c(target = hypothetical_siRNA_targets_oocyte / volume_oocyte, enzyme = hypothetical_siRNA_oocyte / volume_oocyte, complex = 0)
-
-out_siRNA <- ode(y = state, times = times, func = one_step_degradation, parms = params_siRNA)
-plot_ode_result(out_siRNA,paste0("Hypothethical siRNA, oocyte"))
-  
-```
-
-# Experimenting with two step reactions
-
-```{r}
-k_cat_let7_two_step <- 0.2 * k_cat_siRNA
-k_intermediate_let7 <- 1 * k_cat_siRNA
-
-
-two_step_degradation <- function(t, state, parameters) {
-  with(as.list(c(state, parameters)), {
-    d_target <- -k_on * enzyme * target + k_off * complex 
-    d_enzyme <- -k_on * enzyme * target + k_off * complex + k_cat * intermediate
-    d_complex <- k_on * enzyme * target - k_off * complex - k_intermediate * complex
-    d_intermediate <- k_intermediate * complex - k_cat * intermediate
-    list(c(d_target, d_enzyme, d_complex, d_intermediate))
-  })
+  crossing(as.tibble(condition), tidy_out)
 }
 
-params_let7 <- c(k_on = k_on_miRNA, k_off = k_off_miRNA, k_cat = k_cat_let7_two_step, k_intermediate = k_intermediate_let7)
-
-state_3T3 <- c(target = let7_targets_oocyte / volume_3T3, enzyme = let7_3T3 / volume_3T3, complex = 0, intermediate = 0)
-
-out_let7 <- ode(y = state_3T3, times = times, func = two_step_degradation, parms = params_let7)
+sim_results <- all_conditions %>%
+  rowwise() %>% do(miRNA_sim_single(.)) %>% ungroup()
+```
 
 
+```{r}
+```
 
-plot_ode_result(out_let7, "3T3")
+```{r}
+plot_concentration_surface <- function(to_show) {
+  if(length(unique(to_show$fraction_of_total_RNA)) != 1) {
+    stop("Has to be unique")
+  }
+ p <- to_show %>% filter(type == "target") %>% group_by(fraction_of_total_RNA, miRNA_count, name) %>% 
+   mutate(concentration = if_else(concentration < 0, 0, concentration),
+          rel_concentration = concentration / max(concentration)) %>%
+  ungroup() %>%
+  ggplot(aes(x=time_h, y = k_cat_coeff, fill = rel_concentration, z = rel_concentration)) + 
+   geom_tile(width = 0.242424, height = 0.05) + geom_contour(color = "orange") + 
+   #geom_point() +
+   facet_grid(name~miRNA_count) +
+   ggtitle(paste("targets/total RNA =", to_show$fraction_of_total_RNA[1]))
+  print(p)
+  data.frame()
+}
 
-state_oo <- c(target = let7_targets_oocyte / volume_oocyte, enzyme = let7_oocyte / volume_oocyte, complex = 0, intermediate = 0)
-
-out_let7_oo <- ode(y = state_oo, times = times, func = two_step_degradation, parms = params_let7)
-
-plot_ode_result(out_let7_oo, "Oocyte")
-
+sim_results %>%group_by(fraction_of_total_RNA) %>% do(plot_concentration_surface(.))
 
 ```
 
