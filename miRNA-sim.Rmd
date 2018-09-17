@@ -1,74 +1,70 @@
 ---
-title: "miRNA and siRNA modelling"
-output: html_notebook
+title: "Simple miRNA computational modelling"
+author: "Martin Modrak"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
 ---
 
 
-```{r setup}
+```{r setup, message=FALSE}
+#Next line is useful for Word output
+#knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(fig.width = 9)
 library(deSolve)
 library(tidyverse)
 library(ggridges)
 library(cowplot)
+library(knitr)
+options(dplyr.show_progress = FALSE)
 ```
 
-# Outstanding questions
-
-- do we measure uncleave target RNA or free target mRNA? (matters only in 3T3e cells)
-  We measure protein (AGO bound is repressed)
-- What exactly is measured? All sequences complementary to let7?
-- total RNA MSC?
 
 # Assumptions
 
-Using nM/l as unit, K_m and k_cat from Zamore 2015.
+* miRNA degradation is modelled as one step process (similar to siRNA pathway), but with lower catalytic efficiency than the siRNA pathways
+* The AGO2 concentration is assumed to not be rate limiting, in particular all miRNA is assumed to be loaded on AGO2 at all times
+* All miRNA binding events are assumed to be those of pure seed pairing (for seed + additionial base pairing the binding is slightly stronger).
+* no mrNA synthesis (OK in oocytes, questionable in somatic cells). TODO: maybe consider some synthesis as well?
+* only uncleaved mRNA bound in complex with AGO2 + miRNA will not be observed in experiments.
 
-Notes 2018-09-05:
-miRNA does not deplete in ooczt ine  20h
-miRNA silencing hapens on the order of hours
-Need to consider competition with siRNAs and loading unloading
-AGO + siRNA will stay loaded, AGO + miRNA might not
-AGO + miRNA has intermediate stages
+# Mathematical model
 
-Denzler has total miRNA to siRNA counts (hopefully). 
-3T3 cell has only miRNA (but siRNA can be induced)
+The assumptions above lead to a simple description of the system as a set of differential equations. 
+Denoting the concentration of free mRNA molecules with target sites for the miRNA in question as $[\mathrm{target}]$, the concentration of mRNA + miRNA + AGO2 complex as $[\mathrm{complex}]$ and the concentration of the miRNA + AGO2 complex as $[\mathrm{enzyme}]$ The kinetics are descibed as:
 
-miRNA seed vs. seed and something
+$$
+\begin{align}
+\frac{\mathrm{d}[\mathrm{target}]}{\mathrm{d}t} &= -k_{on}[\mathrm{target}][\mathrm{enzyme}] + k_{off}[\mathrm{complex}] \\
+\frac{\mathrm{d}[\mathrm{complex}]}{\mathrm{d}t} &= k_{on}[\mathrm{target}][\mathrm{enzyme}] -  k_{off}[\mathrm{complex}] - k_{cat}[\mathrm{complex}] \\
+\frac{\mathrm{d}[\mathrm{enzyme}]}{\mathrm{d}t} &= -k_{on}[\mathrm{target}][\mathrm{enzyme}] + k_{off}[\mathrm{complex}] + k_{cat}[\mathrm{complex}] \\
+\end{align}
+$$
 
+Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system. This is the same system as used in Michaelis-Menten kinetics, except we don't make the quasi steady state assumption. The assumption probably holds well in our case but we didn't check and stay on the safe side.
 
-Further notes:
-In Zamore 2012 Fig. 7 the $K_M$ values are about a factor of 2.5 off from what would be calculated from $k_{on}$, $k_{off}$ and $k_cat$ - those are different experiments.
-
-Bosson 2014:
-Absolute levels of miRNAs for various cell types are estimated in the range of tens to 
-120,000 copies per cell
-
-This method provided target cpc estimates of 1,200 8-mers, 5,000 7-mers, and 22,000 6-
-mers on average for 3′ UTR sites of each active miRNA ESC family (Figure 3D, lines). For 
-reference to other cell types, these values correspond to 0.8%, 3.2%, and 14.1% of the total 
-mRNA concentration in the cell. 
-
-Assuming AGO is not rate limiting, we simplify the reaction and treat the  specific miRNA/siRNA species as enzyme in the reactions.
+# Input data
 
 ```{r}
-#mole_unit <- 6.022e20 #Mili mole
-# mole_unit_from_nano_mole <- 1e-6
-# mole_unit_from_mole <- 1e3
-
-
+### Define units and conversions
 #Using litre as volume unit! (since constants are in moles per litre)
 mole_unit <- 6.022e14 #nano mole
 mole_unit_from_nano_mole <- 1
 mole_unit_from_mole <- 1e9
-time_unit_from_sec <- 1/3600 #Use hour instead of seconds
+time_unit_from_sec <- 1
 
 K_M_siRNA <- 0.1 * mole_unit_from_nano_mole
 k_on_siRNA <- 3.6e7 / (mole_unit_from_mole * time_unit_from_sec)
+
 k_off_siRNA <- 7.7e-4 / time_unit_from_sec
 k_cat_siRNA <- 8.1e-4 / time_unit_from_sec
+k_cat_siRNA_computed <- K_M_siRNA * k_on_siRNA - k_off_siRNA
 
 k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit_from_sec)
 k_off_miRNA <- 0.051e-2 / time_unit_from_sec
 
+### Combinations of data we use
 cells <- tibble(
   name = c("3T3","oocyte"),
   volume = c(4.4e-12, 260e-12),
@@ -125,15 +121,90 @@ plot_ode_result <- function(out, title) {
 
 ```
 
-# let7 modelling
 
-Modulating just k_cat for let7 is enough - to get full let7 efficiency at 3T3 cells but have negligible degradation in oocyte for $k_{cat,\mathrm{let7}} \in (0.05 * k_{cat,\mathrm{siRNA}}, 0.3 * k_{cat,\mathrm{siRNA}})$.
+We take $k_{on}$ and $k_{off}$ for the mouse miRNA system from from Wee, Flores-Jasso, Salomon & Zamore 2012, Argonaute Divides Its RNA Guide into Domains with Distinct Functions and RNA-Binding Properties, Figure 7. The same source also gives $k_{cat}$ for the siRNA pathway, which provides an upper bound on miRNA pathway efficiency.
+
+We note that the $k_{cat}$ value for the siRNA pathway in the source is about a factor of 3.5 smaller from what would be calculated from the reported $k_{on}$, $k_{off}$ and $K_{M}$. This is because $k_{on}$, $k_{off}$ were determined in a different experiment than $K_M$ and $k_{cat}$, but gives a useful insight into generalizability of the value.
 
 ```{r}
+tibble(k_cat_reported = k_cat_siRNA * time_unit_from_sec, k_cat_computed =  k_cat_siRNA_computed * time_unit_from_sec) %>% mutate(computed_to_reported_ratio = k_cat_computed / k_cat_reported) %>% kable()
+```
+
+For the follwoing we use the siRNA $k_{cat}$ as reported. TODO: should we do the higher computed $k_{cat}$ as well?
+
+We assume the miRNA $k_{cat}$ to be lower than in siRNA, we test a range of values of a scaling coefficent $k_{cat,\mathrm{miRNA}} = k_{coeff} k_{cat,\mathrm{siRNA}}$:
+
+```{r}
+tibble(k_coeff_min = min(k_cat_coeffs$k_cat_coeff), k_coeff_max = max(k_cat_coeffs$k_cat_coeff), num_intermediate_values = nrow(k_cat_coeffs)) %>% kable()
+```
+
+
+We test dynamics in two cell types - volume in picolitres, total_RNA in copies per cell (cpc):
+```{r}
+cells %>% mutate(volume_pl = volume * 10^12) %>% select(-volume) %>%  kable()
+```
+
+We test different counts (cpc) of the miRNA species: 
+
+```{r}
+miRNA_counts %>% kable()
+```
+
+We test different amount of target mRNAs as fraction of the total RNA in the cell:
+```{r}
+target_pools %>% kable()
+```
+
+We solve the differential equation system for all possible combination of those values. 
+
+```{r}
+# Getting the initial complex concentration at equilibrium
+
+# K_D = k_on / k_off
+# c/t*e = K_D
+# c = t*e*K_D
+# 
+# t  = t_i - c
+# e  = e_i - c
+# 
+# c = (t_i - c)*(e_i-c)*K_D
+# 
+# c = c^2 * K_D + c*(-e_i -t_i)*K_D + e_i * t_i * K_D
+# 0 = c^2 * K_D + c*((-e_i -t_i)*K_D - 1) + e_i * t_i * K_D
+# 
+# D = ((-e_i -t_i)*K_D - 1)^2 - 4*e_i * t_i * K_D^2
+# c = ( -((-e_i -t_i)*K_D - 1)  +- sqrt(D) ) / (2 * K_D)
+# c = ( (e_i + t_i) * K_D + 1 + sqrt(D) ) / (2 * K_D)
+
+```
+
+
+```{r computing_model, cache=TRUE}
 miRNA_sim_single <- function(condition) {
   params <- c(k_cat = k_cat_siRNA * condition$k_cat_coeff, k_on = k_on_miRNA, k_off = k_off_miRNA)
   
-  state <- c(target = condition$total_RNA * condition$fraction_of_total_RNA / condition$volume, enzyme = condition$miRNA_count / condition$volume, complex = 0)
+  #Init the enzyme and complex at equilibrium
+  total_target <- (condition$total_RNA / mole_unit) * condition$fraction_of_total_RNA / condition$volume
+  total_enzyme <- condition$miRNA_count / (condition$volume * mole_unit)
+  K_D <-  params["k_on"] / params["k_off"]
+  names(K_D) <- NULL #For some reason, this has name and it messes up later computations
+  complex_D <- (((total_target + total_enzyme) * K_D + 1) ^ 2) - 4 * total_target * total_enzyme * (K_D^2)
+  initial_complex <- ((total_target + total_enzyme) * K_D + 1 - sqrt(complex_D)) / (2 * K_D)
+  
+  free_target <- total_target - initial_complex
+  free_enzyme <- total_enzyme - initial_complex
+  
+  #Check that the equilibirum calculation is OK
+  if(free_enzyme < 0 || free_target < 0 || initial_complex < 0) {
+    stop("Concentrations below zero")
+  }
+  check <- initial_complex / (free_target * free_enzyme)
+  if(abs(check - K_D) > 1e-8) {
+    stop("Not equilibrium")
+  }
+  
+  #state <- c(target = free_target, enzyme = free_enzyme, complex = initial_complex)
+  state <- c(target = total_target, enzyme = total_enzyme, complex = 0)
   
   out <- ode(y = state, times = times, func = one_step_degradation, parms = params)
 
@@ -148,29 +219,37 @@ sim_results <- all_conditions %>%
   rowwise() %>% do(miRNA_sim_single(.)) %>% ungroup()
 ```
 
+# Modelling Results
 
-```{r}
-```
+Below, we show the landscapes of concentrations of free miRNA targets over time for various coefficients for $k_{cat}$. Each landscape plot corresponds to one of the simulated conditions (fraction of total RNA that are targets, miRNA count, type of cell). The concentration is reported relative to initial concentration of the free miRNA.
 
 ```{r}
 plot_concentration_surface <- function(to_show) {
   if(length(unique(to_show$fraction_of_total_RNA)) != 1) {
     stop("Has to be unique")
   }
+  
+  label_miRNA_count <- function(value) {
+    paste0("#miRNA=",round(as.numeric(value)/1000),"K")
+  }
+  
  p <- to_show %>% filter(type == "target") %>% group_by(fraction_of_total_RNA, miRNA_count, name) %>% 
    mutate(concentration = if_else(concentration < 0, 0, concentration),
-          rel_concentration = concentration / max(concentration)) %>%
+          relative_concentration = concentration / max(concentration)) %>%
   ungroup() %>%
-  ggplot(aes(x=time_h, y = k_cat_coeff, fill = rel_concentration, z = rel_concentration)) + 
-   geom_tile(width = 0.242424, height = 0.05) + geom_contour(color = "orange") + 
-   #geom_point() +
-   facet_grid(name~miRNA_count) +
+  ggplot(aes(x=time_h, y = k_cat_coeff, fill = relative_concentration, z = relative_concentration)) + 
+   geom_raster() + 
+   scale_fill_distiller(palette = "Spectral") +
+   facet_grid(name~miRNA_count, labeller= labeller(miRNA_count = label_miRNA_count)) +
    ggtitle(paste("targets/total RNA =", to_show$fraction_of_total_RNA[1]))
   print(p)
   data.frame()
 }
 
-sim_results %>%group_by(fraction_of_total_RNA) %>% do(plot_concentration_surface(.))
+sim_results %>%group_by(fraction_of_total_RNA) %>% do(plot_concentration_surface(.)) %>% invisible()
 
 ```
 
+We see that all miRNA is expected to be degraded in 3T3 cells across a broad range of conditions (possibly accounting also for the case of non zero synthesis), while in oocytes we don't see noticeable degradation in most conditions.
+
+TODO: the plots are not very colorblind-friendly, make also contour plots.
