@@ -26,8 +26,7 @@ options(dplyr.show_progress = FALSE)
 * miRNA degradation is modelled as one step process (similar to siRNA pathway), but with lower catalytic efficiency than the siRNA pathways
 * The AGO2 concentration is assumed to not be rate limiting, in particular all miRNA is assumed to be loaded on AGO2 at all times
 * All miRNA binding events are assumed to be those of pure seed pairing (for seed + additionial base pairing the binding is slightly stronger).
-* no mrNA synthesis (OK in oocytes, questionable in somatic cells). TODO: maybe consider some synthesis as well?
-* only uncleaved mRNA bound in complex with AGO2 + miRNA will not be observed in experiments.
+* only uncleaved free mRNA is observed in experiments (mRNA bound in complex with AGO2 + miRNA is not be observed).
 
 # Mathematical model
 
@@ -36,13 +35,13 @@ Denoting the concentration of free mRNA molecules with target sites for the miRN
 
 $$
 \begin{align}
-\frac{\mathrm{d}[\mathrm{target}]}{\mathrm{d}t} &= -k_{on}[\mathrm{target}][\mathrm{enzyme}] + k_{off}[\mathrm{complex}] \\
+\frac{\mathrm{d}[\mathrm{target}]}{\mathrm{d}t} &= s_{excess}-k_{on}[\mathrm{target}][\mathrm{enzyme}] + k_{off}[\mathrm{complex}] \\
 \frac{\mathrm{d}[\mathrm{complex}]}{\mathrm{d}t} &= k_{on}[\mathrm{target}][\mathrm{enzyme}] -  k_{off}[\mathrm{complex}] - k_{cat}[\mathrm{complex}] \\
 \frac{\mathrm{d}[\mathrm{enzyme}]}{\mathrm{d}t} &= -k_{on}[\mathrm{target}][\mathrm{enzyme}] + k_{off}[\mathrm{complex}] + k_{cat}[\mathrm{complex}] \\
 \end{align}
 $$
 
-Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system. This is the same system as used in Michaelis-Menten kinetics, except we don't make the quasi steady state assumption. The assumption probably holds well in our case but we didn't check and stay on the safe side.
+Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system and $s_{excess}$ is the excess synthesis rate of new mRNA (i.e. synthesis minus degradation by normal cell processes). Except for the synthesis term, this is the same system as used in Michaelis-Menten kinetics.
 
 # Input data
 
@@ -52,6 +51,7 @@ Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system. T
 mole_unit <- 6.022e14 #nano mole
 mole_unit_from_nano_mole <- 1
 mole_unit_from_mole <- 1e9
+#Using second as time unit
 time_unit_from_sec <- 1
 
 K_M_siRNA <- 0.1 * mole_unit_from_nano_mole
@@ -65,15 +65,20 @@ k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit_from_sec)
 k_off_miRNA <- 0.051e-2 / time_unit_from_sec
 
 ### Combinations of data we use
+volume_3T3 <- 4.4e-12 
+total_RNA_3T3 <- 5e5
 cells <- tibble(
-  name = c("3T3","oocyte"),
-  volume = c(4.4e-12, 260e-12),
-  total_RNA = c(5e5,25e6)
+  name = c("3T3 - no synth","3T3 - low synth","3T3 - high synth","oocyte"),
+  volume = c(volume_3T3,volume_3T3,volume_3T3, 260e-12),
+  total_RNA = c(total_RNA_3T3, total_RNA_3T3, total_RNA_3T3, 25e6),
+  excess_RNA_synthesis = c(0, 5000 / 3600, 20000 / 3600, 0)
+) %>% mutate(
+  name = factor(name, levels = name)
 )
 
 target_pools <- tibble(fraction_of_total_RNA = c(0.1,0.2))
 
-miRNA_counts <- tibble(miRNA_count = c(5e4,1e4,5e3))
+miRNA_counts <- tibble(miRNA_count = c(5e3,1e4,5e4))
 
 k_cat_coeff_step = 0.05
 k_cat_coeffs <- tibble(k_cat_coeff = seq(0.05,1, by = k_cat_coeff_step))
@@ -85,7 +90,7 @@ time_step <- diff(times)[1]
 
 one_step_degradation <- function(t, state, parameters) {
   with(as.list(c(state, parameters)), {
-    d_target <- -k_on * enzyme * target + k_off * complex 
+    d_target <- synthesis -k_on * enzyme * target + k_off * complex 
     d_enzyme <- -k_on * enzyme * target + k_off * complex + k_cat * complex
     d_complex <- k_on * enzyme * target - k_off * complex - k_cat * complex
     list(c(d_target, d_enzyme, d_complex))
@@ -139,9 +144,9 @@ tibble(k_coeff_min = min(k_cat_coeffs$k_cat_coeff), k_coeff_max = max(k_cat_coef
 ```
 
 
-We test dynamics in two cell types - volume in picolitres, total_RNA in copies per cell (cpc):
+We test dynamics in two cell types (3T3 and oocyte), with varying levels of excess mRNA synthesis as shown bellow - volume in picolitres, total_RNA in copies per cell (cpc) and excess RNA synthesis in added cpc per hour after accounting for normal degradation processes:
 ```{r}
-cells %>% mutate(volume_pl = volume * 10^12) %>% select(-volume) %>%  kable()
+cells %>% mutate(volume_pl = volume * 10^12, excess_RNA_synthesis = excess_RNA_synthesis * 3600) %>% select(-volume) %>%  kable()
 ```
 
 We test different counts (cpc) of the miRNA species: 
@@ -180,31 +185,41 @@ We solve the differential equation system for all possible combination of those 
 
 
 ```{r computing_model, cache=TRUE}
-miRNA_sim_single <- function(condition) {
-  params <- c(k_cat = k_cat_siRNA * condition$k_cat_coeff, k_on = k_on_miRNA, k_off = k_off_miRNA)
+miRNA_sim_single <- function(condition, init_complex_equilibrium = TRUE) {
+  params <- c(k_cat = k_cat_siRNA * condition$k_cat_coeff, 
+              k_on = k_on_miRNA, 
+              k_off = k_off_miRNA,
+              synthesis = (condition$excess_RNA_synthesis / mole_unit) * (condition$fraction_of_total_RNA / condition$volume)
+              )
   
   #Init the enzyme and complex at equilibrium
-  total_target <- (condition$total_RNA / mole_unit) * condition$fraction_of_total_RNA / condition$volume
+  total_target <- (condition$total_RNA / mole_unit) * (condition$fraction_of_total_RNA / condition$volume)
   total_enzyme <- condition$miRNA_count / (condition$volume * mole_unit)
-  K_D <-  params["k_on"] / params["k_off"]
-  names(K_D) <- NULL #For some reason, this has name and it messes up later computations
-  complex_D <- (((total_target + total_enzyme) * K_D + 1) ^ 2) - 4 * total_target * total_enzyme * (K_D^2)
-  initial_complex <- ((total_target + total_enzyme) * K_D + 1 - sqrt(complex_D)) / (2 * K_D)
   
-  free_target <- total_target - initial_complex
-  free_enzyme <- total_enzyme - initial_complex
   
-  #Check that the equilibirum calculation is OK
-  if(free_enzyme < 0 || free_target < 0 || initial_complex < 0) {
-    stop("Concentrations below zero")
+  if(init_complex_equilibrium) {
+    K_D <-  params["k_on"] / params["k_off"]
+    names(K_D) <- NULL #For some reason, this has name and it messes up later computations
+    complex_D <- (((total_target + total_enzyme) * K_D + 1) ^ 2) - 4 * total_target * total_enzyme * (K_D^2)
+    initial_complex <- ((total_target + total_enzyme) * K_D + 1 - sqrt(complex_D)) / (2 * K_D)
+    
+    free_target <- total_target - initial_complex
+    free_enzyme <- total_enzyme - initial_complex
+    
+    #Check that the equilibirum calculation is OK
+    if(free_enzyme < 0 || free_target < 0 || initial_complex < 0) {
+      stop("Concentrations below zero")
+    }
+    check <- initial_complex / (free_target * free_enzyme)
+    if(abs(check - K_D) > 1e-8) {
+      stop("Not equilibrium")
+    }
+  
+    state <- c(target = free_target, enzyme = free_enzyme, complex = initial_complex)
+  } else {
+    initial_complex = 0
+    state <- c(target = total_target, enzyme = total_enzyme, complex = 0)
   }
-  check <- initial_complex / (free_target * free_enzyme)
-  if(abs(check - K_D) > 1e-8) {
-    stop("Not equilibrium")
-  }
-  
-  #state <- c(target = free_target, enzyme = free_enzyme, complex = initial_complex)
-  state <- c(target = total_target, enzyme = total_enzyme, complex = 0)
   
   out <- ode(y = state, times = times, func = one_step_degradation, parms = params)
 
@@ -216,7 +231,7 @@ miRNA_sim_single <- function(condition) {
 }
 
 sim_results <- all_conditions %>%
-  rowwise() %>% do(miRNA_sim_single(.)) %>% ungroup()
+  rowwise() %>% do(miRNA_sim_single(., init_complex_equilibrium = TRUE)) %>% ungroup()
 ```
 
 # Modelling Results
@@ -240,7 +255,7 @@ plot_concentration_surface <- function(to_show) {
   ggplot(aes(x=time_h, y = k_cat_coeff, fill = relative_concentration, z = relative_concentration)) + 
    geom_raster() + 
    scale_fill_distiller(palette = "Spectral") +
-   facet_grid(name~miRNA_count, labeller= labeller(miRNA_count = label_miRNA_count)) +
+   facet_grid(miRNA_count~name, labeller= labeller(miRNA_count = label_miRNA_count)) +
    ggtitle(paste("targets/total RNA =", to_show$fraction_of_total_RNA[1]))
   print(p)
   data.frame()
@@ -250,6 +265,6 @@ sim_results %>%group_by(fraction_of_total_RNA) %>% do(plot_concentration_surface
 
 ```
 
-We see that all miRNA is expected to be degraded in 3T3 cells across a broad range of conditions (possibly accounting also for the case of non zero synthesis), while in oocytes we don't see noticeable degradation in most conditions.
+We see that even with the exact same miRNA degradation kinetics, all target mRNA is expected to be degraded in 3T3 cells across a broad range of conditions, while in oocytes we don't see noticeable degradation in most conditions. 
 
 TODO: the plots are not very colorblind-friendly, make also contour plots.
