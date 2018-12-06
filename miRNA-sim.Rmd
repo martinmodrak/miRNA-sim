@@ -68,17 +68,17 @@ k_off_miRNA <- 0.051e-2 / time_unit_from_sec
 volume_3T3 <- 4.4e-12 
 total_RNA_3T3 <- 5e5
 cells <- tibble(
-  name = c("3T3 - no synth","3T3 - low synth","3T3 - high synth","oocyte"),
-  volume = c(volume_3T3,volume_3T3,volume_3T3, 260e-12),
-  total_RNA = c(total_RNA_3T3, total_RNA_3T3, total_RNA_3T3, 25e6),
-  excess_RNA_synthesis = c(0, 5000 / 3600, 20000 / 3600, 0)
+  name = c("3T3","mouse oocyte", "pig oocyte"),
+  volume = c(volume_3T3,260e-12, 520e-12),
+  total_RNA = c(total_RNA_3T3, 25e6, 50e6),
+  excess_RNA_synthesis = c(0, 0, 0)
 ) %>% mutate(
   name = factor(name, levels = name)
 )
 
 target_pools <- tibble(fraction_of_total_RNA = c(0.1,0.2))
 
-miRNA_counts <- tibble(miRNA_count = c(5e3,1e4,5e4))
+miRNA_counts <- tibble(miRNA_count = c(42000, 1e5, 5e5, 1e6, 5e6))
 
 k_cat_coeff_step = 0.05
 k_cat_coeffs <- tibble(k_cat_coeff = seq(0.05,1, by = k_cat_coeff_step))
@@ -101,7 +101,7 @@ plot_ode_result <- function(out, title) {
   out_tidy <- out %>% as.data.frame() %>% 
     gather(type, concentration, -time) %>%
     mutate(time_h = time / (3600 * time_unit_from_sec)) 
-    
+  
   
   uncleaved_plot <- out_tidy %>% 
     filter(type != "enzyme") %>%
@@ -245,7 +245,9 @@ plot_concentration_surface <- function(to_show) {
   }
   
   label_miRNA_count <- function(value) {
-    paste0("#miRNA=",round(as.numeric(value)/1000),"K")
+    if_else(as.numeric(value) < 1e6, paste0("#=",round(as.numeric(value)/1000),"K"),
+      paste0("#=",round(as.numeric(value)/1e6),"M"))
+    
   }
   
  p <- to_show %>% filter(type == "target") %>% group_by(fraction_of_total_RNA, miRNA_count, name) %>% 
