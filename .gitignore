@@ -37,3 +37,11 @@ rsconnect/
 
 *.nb.html
 /papers/
+
+
+# Knitr outputs and tmp files
+*.docx
+*.html
+*.log
+*.tex
+/*_files/
