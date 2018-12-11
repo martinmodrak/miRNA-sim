@@ -70,20 +70,32 @@ k_off_miRNA <- 0.051e-2 / time_unit_from_sec
 ### Combinations of data we use
 volume_3T3 <- 4.4e-12 
 total_RNA_3T3 <- 5e5
+# cells <- tibble(
+#   name = c("3T3","mouse oocyte", "pig oocyte"),
+#   volume = c(volume_3T3,260e-12, 520e-12),
+#   total_RNA = c(total_RNA_3T3, 25e6, 50e6),
+#   excess_RNA_synthesis = c(0, 0, 0)
+# ) %>% mutate(
+#   name = factor(name, levels = name)
+# )
 cells <- tibble(
-  name = c("3T3","mouse oocyte", "pig oocyte"),
-  volume = c(volume_3T3,260e-12, 520e-12),
-  total_RNA = c(total_RNA_3T3, 25e6, 50e6),
-  excess_RNA_synthesis = c(0, 0, 0)
+  name = c("3T3","mouse oocyte"),
+  volume = c(volume_3T3,260e-12),
+  total_RNA = c(total_RNA_3T3, 25e6),
+  excess_RNA_synthesis = c(0, 0)
 ) %>% mutate(
   name = factor(name, levels = name)
 )
 
-target_pools <- tibble(fraction_of_total_RNA = c(0.1,0.2))
 
-miRNA_counts <- tibble(miRNA_count = c(5e3,1e4,5e4, 2e5 ))
+#target_pools <- tibble(fraction_of_total_RNA = c(0.1,0.2))
+target_pools <- tibble(fraction_of_total_RNA = c(0.005,0.01,0.02, 0.04, 0.06, 0.1, 0.2))
+
+#miRNA_counts <- tibble(miRNA_count = c(5e3,1e4,5e4, 2e5 ))
 #Used with Shubha for experimental guess
 #miRNA_counts <- tibble(miRNA_count = c(42000, 1e5, 5e5, 1e6, 5e6))
+
+miRNA_counts <- tibble(miRNA_count = c(2e4,5e4, 1e5, 1e6, 5e6))
 
 k_cat_coeff_step = 0.05
 k_cat_coeffs <- tibble(k_cat_coeff = seq(0.05,1, by = k_cat_coeff_step))
@@ -189,7 +201,7 @@ We solve the differential equation system for all possible combination of those 
 ```
 
 
-```{r computing_model, cache=TRUE}
+```{r computing_model}
 miRNA_sim_single <- function(condition, init_complex_equilibrium = TRUE) {
   params <- c(k_cat = k_cat_siRNA * condition$k_cat_coeff, 
               k_on = k_on_miRNA, 
@@ -216,8 +228,9 @@ miRNA_sim_single <- function(condition, init_complex_equilibrium = TRUE) {
       stop("Concentrations below zero")
     }
     check <- initial_complex / (free_target * free_enzyme)
-    if(abs(check - K_D) > 1e-8) {
-      stop("Not equilibrium")
+    abs_diff <- abs(check - K_D)
+    if(abs_diff > 1e-6) {
+      stop(paste("Not equilibrium, K_D =  ",K_D, "check = ", check, "  diff = ", abs_diff))
     }
   
     state <- c(target = free_target, enzyme = free_enzyme, complex = initial_complex)
@@ -243,7 +256,7 @@ sim_results <- all_conditions %>%
 
 Below, we show the landscapes of concentrations of free miRNA targets over time for various coefficients for $k_{cat}$. Each landscape plot corresponds to one of the simulated conditions (fraction of total RNA that are targets, miRNA count, type of cell). The concentration is reported relative to initial concentration of the free miRNA.
 
-```{r}
+```{r, fig.height=6}
 plot_concentration_surface <- function(to_show) {
   if(length(unique(to_show$fraction_of_total_RNA)) != 1) {
     stop("Has to be unique")
