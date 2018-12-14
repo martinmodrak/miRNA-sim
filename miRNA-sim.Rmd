@@ -68,7 +68,7 @@ k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit_from_sec)
 k_off_miRNA <- 0.051e-2 / time_unit_from_sec
 
 ### Combinations of data we use
-volume_3T3 <- 4.4e-12 
+volume_3T3 <- 3e-12 #4.4e-12 
 total_RNA_3T3 <- 5e5
 
 volume_mouse_oocyte <- 260e-12
@@ -160,9 +160,9 @@ miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) 
       stop("Concentrations below zero")
     }
     check <- initial_complex / (free_target * free_enzyme)
-    abs_diff <- abs(check - K_D)
-    if(abs_diff > 1e-6) {
-      stop(paste("Not equilibrium, K_D =  ",K_D, "check = ", check, "  diff = ", abs_diff))
+    rel_diff <- abs(check - K_D) / K_D
+    if(rel_diff > 1e-4) {
+      stop(paste("Not equilibrium, K_D =  ",K_D, "check = ", check, "  diff = ", rel_diff))
     }
   
     state <- c(target = free_target, enzyme = free_enzyme, complex = initial_complex)
@@ -185,56 +185,74 @@ miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) 
 # Comparison of concentrations
 
 ```{r}
-min_miRNA_cpc_3T3 =  10
-max_miRNA_cpc_3T3 = 1e5
+log_scale = TRUE
+N_steps = 30
+
+normal_miRNA_cpc_3T3 = 38000
+normal_miRNA_cpc_oocyte = 20000
+
+min_miRNA_cpc_3T3 =  100
+
+
+if(log_scale) {
+  max_miRNA_cpc_3T3 = normal_miRNA_cpc_3T3 * 10
+} else {
+  max_miRNA_cpc_3T3 = normal_miRNA_cpc_3T3 * 2
+}
 
 min_miRNA_concentration = (min_miRNA_cpc_3T3 / mole_unit) / volume_3T3
 max_miRNA_concentration = (max_miRNA_cpc_3T3 / mole_unit) / volume_3T3
 
-miRNA_concentrations = seq(log(min_miRNA_concentration), log(max_miRNA_concentration), length.out = 30) %>% exp()
 
-target_concentrations_relative = seq(log(0.5), log(100), length.out = 30) %>% exp()
+if(log_scale) {
+  miRNA_concentrations = seq(log(min_miRNA_concentration), log(max_miRNA_concentration), length.out = N_steps) %>% exp()
+  target_concentrations = seq(log(min_miRNA_concentration), log(max_miRNA_concentration * 10), length.out = N_steps) %>% exp()
+} else {
+  miRNA_concentrations = seq(min_miRNA_concentration, max_miRNA_concentration, length.out = N_steps)
+  target_concentrations = seq(min_miRNA_concentration, max_miRNA_concentration * 10, length.out = N_steps)
+}
 
-times_concentration_hours = c(15,20,25)
+times_concentration_hours = seq(0, 25, length.out = 101)
 times_concentration = times_concentration_hours * 60 * 60 * time_unit_from_sec
 
-if(!all(times_to_show %in% times)) {
-  stop("Invalid times to show")
-}
 
 k_cat_coeffs_concentration <- 1 / c(1, 2, 4, 5, 10, 20)
 
 all_conditions_concentration <- tibble(total_enzyme = miRNA_concentrations) %>%
-  crossing(tibble(target_relative = target_concentrations_relative)) %>%
+  crossing(tibble(total_target = target_concentrations)) %>%
   crossing(k_cat_coeff = k_cat_coeffs_concentration) 
   
 cell_info = tibble(condition = c("let7 in 3T3", "let7 in oocyte"),
-                   miRNA_concentration = c(42000 / (mole_unit * volume_3T3), 42000 / (mole_unit * volume_mouse_oocyte)))
+                   miRNA_concentration = c(normal_miRNA_cpc_3T3 / (mole_unit * volume_3T3), normal_miRNA_cpc_oocyte / (mole_unit * volume_mouse_oocyte)))
 ```
 
 
 ```{r computing_model_concentration}
 
 sim_results_concentration <- all_conditions_concentration %>%
-  mutate(synthesis = 0,
-         total_target = total_enzyme * target_relative
+  mutate(synthesis = 0
          ) %>%
   rowwise() %>% do(miRNA_sim_single(., times_concentration, init_complex_equilibrium = TRUE)) %>% ungroup()
 ```
 
 ```{r plot_concentration, fig.height=6}
 plot_efficiency_surface <- function(to_show, time_h, fixed_data) {
- p <- to_show %>% filter(type == "target", time_h == time_h) %>% 
+  if(log_scale) {
+    scale_trans = "log10"
+  } else {
+    scale_trans = "identity"
+  }
+ p <- to_show %>% filter(type == "target", time_h == !!time_h) %>% 
    mutate(concentration = if_else(concentration < 0, 0, concentration),
           relative_concentration = concentration / initial_target) %>%
-  ggplot(aes(x = total_enzyme, y = target_relative, fill = relative_concentration, z = relative_concentration)) + 
+  ggplot(aes(x = total_enzyme, y = total_target, fill = relative_concentration, z = relative_concentration)) + 
    geom_raster() + 
-   geom_vline(data = fixed_data, mapping = aes(xintercept = miRNA_concentration, color = cell), inherit.aes= FALSE) +
-   scale_fill_distiller(palette = "Spectral") +
+   geom_vline(data = fixed_data, mapping = aes(xintercept = miRNA_concentration, color = condition)) +
+   scale_fill_distiller("Target uncleaved", palette = "Spectral") +
    facet_wrap(~k_cat_coeff, labeller= labeller(k_cat_coeff = function(x) {paste0("coeff = ",x)})) +
-   scale_x_continuous("miRNA concentration", trans = "log2") +
-   scale_y_continuous("relative target concentration", trans = "log2") +
-   ggtitle(paste0("Relative concentration at ", time_h,"h"))
+   scale_x_continuous("miRNA concentration [nM]", trans = scale_trans) +
+   scale_y_continuous("initial target concentration [nM]", trans = scale_trans) +
+   ggtitle(paste0("Proportion target uncleaved at ", time_h,"h"))
   
  print(p)
   
@@ -277,7 +295,7 @@ target_pools <- tibble(fraction_of_total_RNA = c(0.1,0.2))
 miRNA_counts <- tibble(miRNA_count = c(2e4,5e4))
 
 times_cells <- seq(0, 25 * 60 * 60 * time_unit_from_sec, length.out = 101)
-time_step <- diff(times)[1]
+time_step <- diff(times_cells)[1]
 
 
 all_conditions_cells <- crossing(cells, target_pools, miRNA_counts, k_cat_coeffs)
