@@ -7,17 +7,20 @@ output:
   pdf_document: default
   html_document:
     code_folding: hide
+absract: "This is a supplement to the paper <TODO: paper title>. We describe a simplified mathematical model of the miRNA pathway based on our knowledge of the siRNA pathway."
 ---
 
 
 ```{r setup, message=FALSE}
-#Next line is useful for Word output
 knitr::opts_chunk$set(echo = FALSE)
-knitr::opts_chunk$set(fig.width = 9)
+#Next line is useful for Word output
+#knitr::opts_chunk$set(fig.width = 9)
 library(deSolve)
-library(tidyverse)
-library(ggridges)
-library(cowplot)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(cowplot) #Optional, can be commented out
 library(knitr)
 options(dplyr.show_progress = FALSE)
 ```
@@ -25,7 +28,7 @@ options(dplyr.show_progress = FALSE)
 
 # Assumptions
 
-* miRNA degradation is modelled as one step process (similar to siRNA pathway), but with lower catalytic efficiency than the siRNA pathways
+* miRNA degradation is modelled as one step process (similar to siRNA/RNAi pathway), but with lower catalytic efficiency than the siRNA pathways
 * The AGO2 concentration is assumed to not be rate limiting, in particular all miRNA is assumed to be loaded on AGO2 at all times
 * We bundle together all miRNA species and all target RNA molecules
 * All miRNA binding events are assumed to be those of pure seed pairing (for seed + additionial base pairing the binding is slightly stronger).
@@ -44,7 +47,7 @@ $$
 \end{align}
 $$
 
-Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system and $s_{excess}$ is the excess synthesis rate of new mRNA (i.e. synthesis minus degradation by normal cell processes). Except for the synthesis term, this is the same system as used in Michaelis-Menten kinetics.
+Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system and $s_{excess}$ is the excess synthesis rate of new mRNA (i.e. synthesis minus degradation by normal cell processes). This is the same system as used in Michaelis-Menten kinetics.
 
 # Input data
 
@@ -54,7 +57,7 @@ Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system an
 mole_unit <- 6.022e14 #nano mole
 mole_unit_from_nano_mole <- 1
 mole_unit_from_mole <- 1e9
-#Using second as time unit
+#Using 1/10th second as time unit (some sims need fine resolution)
 time_unit_from_sec <- 1
 
 K_M_siRNA <- 0.1 * mole_unit_from_nano_mole
@@ -125,8 +128,7 @@ We note that the $k_{cat}$ value for the siRNA pathway in the source is about a 
 tibble(k_cat_reported = k_cat_siRNA * time_unit_from_sec, k_cat_computed =  k_cat_siRNA_computed * time_unit_from_sec) %>% mutate(computed_to_reported_ratio = k_cat_computed / k_cat_reported) %>% kable()
 ```
 
-For the follwoing we use the siRNA $k_{cat}$ as reported. TODO: should we do the higher computed $k_{cat}$ as well?
-
+For the follwoing we use the siRNA $k_{cat}$ as reported. 
 We assume the miRNA $k_{cat}$ to be lower than in siRNA, we test a range of values of a scaling coefficent $k_{cat,\mathrm{miRNA}} = k_{coeff} k_{cat,\mathrm{siRNA}}$:
 
 ```{r}
@@ -141,12 +143,12 @@ miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) 
               synthesis = condition$synthesis
               )
   
-  #Init the enzyme and complex at equilibrium
   total_target <- condition$total_target
   total_enzyme <- condition$total_enzyme
   
   
   if(init_complex_equilibrium) {
+    #Init the enzyme and complex at equilibrium
     K_D <-  params["k_on"] / params["k_off"]
     names(K_D) <- NULL #For some reason, this has name and it messes up later computations
     complex_D <- (((total_target + total_enzyme) * K_D + 1) ^ 2) - 4 * total_target * total_enzyme * (K_D^2)
@@ -186,7 +188,7 @@ miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) 
 
 ```{r}
 log_scale = TRUE
-N_steps = 30
+N_steps = 100
 
 normal_miRNA_cpc_3T3 = 38000
 normal_miRNA_cpc_oocyte = 20000
