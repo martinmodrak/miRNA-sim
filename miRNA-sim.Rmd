@@ -288,3 +288,12 @@ sim_results %>%group_by(fraction_of_total_RNA) %>% do(plot_concentration_surface
 We see that even with the exact same miRNA degradation kinetics, all target mRNA is expected to be degraded in 3T3 cells across a broad range of conditions, while in oocytes we don't see noticeable degradation in most conditions. 
 
 TODO: the plots are not very colorblind-friendly, make also contour plots.
+
+TODO:
+small plots:
+miRNA concentration (10 to 1e5 cpc in 3T3) x target concentration relative to miRNA concetration
+color: efficiency at 20hours
+
+mark fibroblasts, oocytes on the small plots
+
+grid - k_cat_coeff (possibly time)
