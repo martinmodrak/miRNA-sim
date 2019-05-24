@@ -42,6 +42,7 @@ rsconnect/
 # Knitr outputs and tmp files
 *.docx
 *.html
+*.pdf
 *.log
 *.tex
 /*_files/

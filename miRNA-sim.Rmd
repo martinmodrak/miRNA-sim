@@ -7,17 +7,20 @@ output:
   pdf_document: default
   html_document:
     code_folding: hide
+absract: "This is a supplement to the paper <TODO: paper title>. We describe a simplified mathematical model of the miRNA pathway based on our knowledge of the siRNA pathway."
 ---
 
 
 ```{r setup, message=FALSE}
-#Next line is useful for Word output
 knitr::opts_chunk$set(echo = FALSE)
-knitr::opts_chunk$set(fig.width = 9)
+#Next line is useful for Word output
+#knitr::opts_chunk$set(fig.width = 9)
 library(deSolve)
-library(tidyverse)
-library(ggridges)
-library(cowplot)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(cowplot) #Optional, can be commented out
 library(knitr)
 options(dplyr.show_progress = FALSE)
 ```
@@ -25,7 +28,7 @@ options(dplyr.show_progress = FALSE)
 
 # Assumptions
 
-* miRNA degradation is modelled as one step process (similar to siRNA pathway), but with lower catalytic efficiency than the siRNA pathways
+* miRNA degradation is modelled as one step process (similar to siRNA/RNAi pathway), but with lower catalytic efficiency than the siRNA pathways
 * The AGO2 concentration is assumed to not be rate limiting, in particular all miRNA is assumed to be loaded on AGO2 at all times
 * We bundle together all miRNA species and all target RNA molecules
 * All miRNA binding events are assumed to be those of pure seed pairing (for seed + additionial base pairing the binding is slightly stronger).
@@ -44,7 +47,7 @@ $$
 \end{align}
 $$
 
-Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system and $s_{excess}$ is the excess synthesis rate of new mRNA (i.e. synthesis minus degradation by normal cell processes). Except for the synthesis term, this is the same system as used in Michaelis-Menten kinetics.
+Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system and $s_{excess}$ is the excess synthesis rate of new mRNA (i.e. synthesis minus degradation by normal cell processes). This is the same system as used in Michaelis-Menten kinetics.
 
 # Input data
 
@@ -54,7 +57,7 @@ Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system an
 mole_unit <- 6.022e14 #nano mole
 mole_unit_from_nano_mole <- 1
 mole_unit_from_mole <- 1e9
-#Using second as time unit
+#Using 1/10th second as time unit (some sims need fine resolution)
 time_unit_from_sec <- 1
 
 K_M_siRNA <- 0.1 * mole_unit_from_nano_mole
@@ -68,42 +71,15 @@ k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit_from_sec)
 k_off_miRNA <- 0.051e-2 / time_unit_from_sec
 
 ### Combinations of data we use
-volume_3T3 <- 4.4e-12 
+volume_3T3 <- 3e-12 #4.4e-12 
 total_RNA_3T3 <- 5e5
-# cells <- tibble(
-#   name = c("3T3","mouse oocyte", "pig oocyte"),
-#   volume = c(volume_3T3,260e-12, 520e-12),
-#   total_RNA = c(total_RNA_3T3, 25e6, 50e6),
-#   excess_RNA_synthesis = c(0, 0, 0)
-# ) %>% mutate(
-#   name = factor(name, levels = name)
-# )
-cells <- tibble(
-  name = c("3T3","mouse oocyte"),
-  volume = c(volume_3T3,260e-12),
-  total_RNA = c(total_RNA_3T3, 25e6),
-  excess_RNA_synthesis = c(0, 0)
-) %>% mutate(
-  name = factor(name, levels = name)
-)
 
+volume_mouse_oocyte <- 260e-12
 
-#target_pools <- tibble(fraction_of_total_RNA = c(0.1,0.2))
-target_pools <- tibble(fraction_of_total_RNA = c(0.005,0.01,0.02, 0.04, 0.06, 0.1, 0.2))
-
-#miRNA_counts <- tibble(miRNA_count = c(5e3,1e4,5e4, 2e5 ))
-#Used with Shubha for experimental guess
-#miRNA_counts <- tibble(miRNA_count = c(42000, 1e5, 5e5, 1e6, 5e6))
-
-miRNA_counts <- tibble(miRNA_count = c(2e4,5e4, 1e5, 1e6, 5e6))
 
 k_cat_coeff_step = 0.05
 k_cat_coeffs <- tibble(k_cat_coeff = seq(0.05,1, by = k_cat_coeff_step))
 
-all_conditions <- crossing(cells, target_pools, miRNA_counts, k_cat_coeffs)
-
-times <- seq(0,24*60*60 * time_unit_from_sec, length.out = 101)
-time_step <- diff(times)[1]
 
 one_step_degradation <- function(t, state, parameters) {
   with(as.list(c(state, parameters)), {
@@ -152,12 +128,179 @@ We note that the $k_{cat}$ value for the siRNA pathway in the source is about a 
 tibble(k_cat_reported = k_cat_siRNA * time_unit_from_sec, k_cat_computed =  k_cat_siRNA_computed * time_unit_from_sec) %>% mutate(computed_to_reported_ratio = k_cat_computed / k_cat_reported) %>% kable()
 ```
 
-For the follwoing we use the siRNA $k_{cat}$ as reported. TODO: should we do the higher computed $k_{cat}$ as well?
-
+For the follwoing we use the siRNA $k_{cat}$ as reported. 
 We assume the miRNA $k_{cat}$ to be lower than in siRNA, we test a range of values of a scaling coefficent $k_{cat,\mathrm{miRNA}} = k_{coeff} k_{cat,\mathrm{siRNA}}$:
 
 ```{r}
 tibble(k_coeff_min = min(k_cat_coeffs$k_cat_coeff), k_coeff_max = max(k_cat_coeffs$k_cat_coeff), num_intermediate_values = nrow(k_cat_coeffs)) %>% kable()
+```
+
+```{r}
+miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) {
+  params <- c(k_cat = k_cat_siRNA * condition$k_cat_coeff, 
+              k_on = k_on_miRNA, 
+              k_off = k_off_miRNA,
+              synthesis = condition$synthesis
+              )
+  
+  total_target <- condition$total_target
+  total_enzyme <- condition$total_enzyme
+  
+  
+  if(init_complex_equilibrium) {
+    #Init the enzyme and complex at equilibrium
+    K_D <-  params["k_on"] / params["k_off"]
+    names(K_D) <- NULL #For some reason, this has name and it messes up later computations
+    complex_D <- (((total_target + total_enzyme) * K_D + 1) ^ 2) - 4 * total_target * total_enzyme * (K_D^2)
+    initial_complex <- ((total_target + total_enzyme) * K_D + 1 - sqrt(complex_D)) / (2 * K_D)
+    
+    free_target <- total_target - initial_complex
+    free_enzyme <- total_enzyme - initial_complex
+    
+    #Check that the equilibirum calculation is OK
+    if(free_enzyme < 0 || free_target < 0 || initial_complex < 0) {
+      stop("Concentrations below zero")
+    }
+    check <- initial_complex / (free_target * free_enzyme)
+    rel_diff <- abs(check - K_D) / K_D
+    if(rel_diff > 1e-4) {
+      stop(paste("Not equilibrium, K_D =  ",K_D, "check = ", check, "  diff = ", rel_diff))
+    }
+  
+    state <- c(target = free_target, enzyme = free_enzyme, complex = initial_complex)
+  } else {
+    initial_complex = 0
+    state <- c(target = total_target, enzyme = total_enzyme, complex = 0)
+  }
+  
+  out <- ode(y = state, times = times, func = one_step_degradation, parms = params)
+
+  tidy_out <- out %>% as.data.frame() %>%
+    gather(type, concentration, -time) %>%
+    mutate(time_h = time / (3600 * time_unit_from_sec), initial_target = state["target"]) 
+
+  crossing(as.tibble(condition), tidy_out)
+}
+```
+
+
+# Comparison of concentrations
+
+```{r}
+log_scale = TRUE
+N_steps = 100
+
+normal_miRNA_cpc_3T3 = 38000
+normal_miRNA_cpc_oocyte = 20000
+
+min_miRNA_cpc_3T3 =  100
+
+
+if(log_scale) {
+  max_miRNA_cpc_3T3 = normal_miRNA_cpc_3T3 * 10
+} else {
+  max_miRNA_cpc_3T3 = normal_miRNA_cpc_3T3 * 2
+}
+
+min_miRNA_concentration = (min_miRNA_cpc_3T3 / mole_unit) / volume_3T3
+max_miRNA_concentration = (max_miRNA_cpc_3T3 / mole_unit) / volume_3T3
+
+
+if(log_scale) {
+  miRNA_concentrations = seq(log(min_miRNA_concentration), log(max_miRNA_concentration), length.out = N_steps) %>% exp()
+  target_concentrations = seq(log(min_miRNA_concentration), log(max_miRNA_concentration * 10), length.out = N_steps) %>% exp()
+} else {
+  miRNA_concentrations = seq(min_miRNA_concentration, max_miRNA_concentration, length.out = N_steps)
+  target_concentrations = seq(min_miRNA_concentration, max_miRNA_concentration * 10, length.out = N_steps)
+}
+
+times_concentration_hours = seq(0, 25, length.out = 101)
+times_concentration = times_concentration_hours * 60 * 60 * time_unit_from_sec
+
+
+k_cat_coeffs_concentration <- 1 / c(1, 2, 4, 5, 10, 20)
+
+all_conditions_concentration <- tibble(total_enzyme = miRNA_concentrations) %>%
+  crossing(tibble(total_target = target_concentrations)) %>%
+  crossing(k_cat_coeff = k_cat_coeffs_concentration) 
+  
+cell_info = tibble(condition = c("let7 in 3T3", "let7 in oocyte"),
+                   miRNA_concentration = c(normal_miRNA_cpc_3T3 / (mole_unit * volume_3T3), normal_miRNA_cpc_oocyte / (mole_unit * volume_mouse_oocyte)))
+```
+
+
+```{r computing_model_concentration}
+
+sim_results_concentration <- all_conditions_concentration %>%
+  mutate(synthesis = 0
+         ) %>%
+  rowwise() %>% do(miRNA_sim_single(., times_concentration, init_complex_equilibrium = TRUE)) %>% ungroup()
+```
+
+```{r plot_concentration, fig.height=6}
+plot_efficiency_surface <- function(to_show, time_h, fixed_data) {
+  if(log_scale) {
+    scale_trans = "log10"
+  } else {
+    scale_trans = "identity"
+  }
+ p <- to_show %>% filter(type == "target", time_h == !!time_h) %>% 
+   mutate(concentration = if_else(concentration < 0, 0, concentration),
+          relative_concentration = concentration / initial_target) %>%
+  ggplot(aes(x = total_enzyme, y = total_target, fill = relative_concentration, z = relative_concentration)) + 
+   geom_raster() + 
+   geom_vline(data = fixed_data, mapping = aes(xintercept = miRNA_concentration, color = condition)) +
+   scale_fill_distiller("Target uncleaved", palette = "Spectral") +
+   facet_wrap(~k_cat_coeff, labeller= labeller(k_cat_coeff = function(x) {paste0("coeff = ",x)})) +
+   scale_x_continuous("miRNA concentration [nM]", trans = scale_trans) +
+   scale_y_continuous("initial target concentration [nM]", trans = scale_trans) +
+   ggtitle(paste0("Proportion target uncleaved at ", time_h,"h"))
+  
+ print(p)
+  
+}
+
+plot_efficiency_surface(sim_results_concentration, 20, cell_info)
+
+```
+
+
+# Comparison of cell types
+
+
+```{r}
+# cells <- tibble(
+#   name = c("3T3","mouse oocyte", "pig oocyte"),
+#   volume = c(volume_3T3,260e-12, 520e-12),
+#   total_RNA = c(total_RNA_3T3, 25e6, 50e6),
+#   excess_RNA_synthesis = c(0, 0, 0)
+# ) %>% mutate(
+#   name = factor(name, levels = name)
+# )
+cells <- tibble(
+  name = c("3T3","mouse oocyte"),
+  volume = c(volume_3T3, volume_mouse_oocyte),
+  total_RNA = c(total_RNA_3T3, 25e6),
+  excess_RNA_synthesis = c(0, 0)
+) %>% mutate(
+  name = factor(name, levels = name)
+)
+
+
+target_pools <- tibble(fraction_of_total_RNA = c(0.1,0.2))
+#target_pools <- tibble(fraction_of_total_RNA = c(0.005,0.01,0.02, 0.04, 0.06, 0.1, 0.2))
+
+#miRNA_counts <- tibble(miRNA_count = c(5e3,1e4,5e4, 2e5 ))
+#Used with Shubha for experimental guess
+#miRNA_counts <- tibble(miRNA_count = c(42000, 1e5, 5e5, 1e6, 5e6))
+#miRNA_counts <- tibble(miRNA_count = c(2e4,5e4, 1e5, 1e6, 5e6))
+miRNA_counts <- tibble(miRNA_count = c(2e4,5e4))
+
+times_cells <- seq(0, 25 * 60 * 60 * time_unit_from_sec, length.out = 101)
+time_step <- diff(times_cells)[1]
+
+
+all_conditions_cells <- crossing(cells, target_pools, miRNA_counts, k_cat_coeffs)
 ```
 
 
@@ -201,58 +344,18 @@ We solve the differential equation system for all possible combination of those 
 ```
 
 
-```{r computing_model}
-miRNA_sim_single <- function(condition, init_complex_equilibrium = TRUE) {
-  params <- c(k_cat = k_cat_siRNA * condition$k_cat_coeff, 
-              k_on = k_on_miRNA, 
-              k_off = k_off_miRNA,
-              synthesis = (condition$excess_RNA_synthesis / mole_unit) * (condition$fraction_of_total_RNA / condition$volume)
-              )
-  
-  #Init the enzyme and complex at equilibrium
-  total_target <- (condition$total_RNA / mole_unit) * (condition$fraction_of_total_RNA / condition$volume)
-  total_enzyme <- condition$miRNA_count / (condition$volume * mole_unit)
-  
-  
-  if(init_complex_equilibrium) {
-    K_D <-  params["k_on"] / params["k_off"]
-    names(K_D) <- NULL #For some reason, this has name and it messes up later computations
-    complex_D <- (((total_target + total_enzyme) * K_D + 1) ^ 2) - 4 * total_target * total_enzyme * (K_D^2)
-    initial_complex <- ((total_target + total_enzyme) * K_D + 1 - sqrt(complex_D)) / (2 * K_D)
-    
-    free_target <- total_target - initial_complex
-    free_enzyme <- total_enzyme - initial_complex
-    
-    #Check that the equilibirum calculation is OK
-    if(free_enzyme < 0 || free_target < 0 || initial_complex < 0) {
-      stop("Concentrations below zero")
-    }
-    check <- initial_complex / (free_target * free_enzyme)
-    abs_diff <- abs(check - K_D)
-    if(abs_diff > 1e-6) {
-      stop(paste("Not equilibrium, K_D =  ",K_D, "check = ", check, "  diff = ", abs_diff))
-    }
-  
-    state <- c(target = free_target, enzyme = free_enzyme, complex = initial_complex)
-  } else {
-    initial_complex = 0
-    state <- c(target = total_target, enzyme = total_enzyme, complex = 0)
-  }
-  
-  out <- ode(y = state, times = times, func = one_step_degradation, parms = params)
+```{r computing_model_cells}
 
-  tidy_out <- out %>% as.data.frame() %>%
-    gather(type, concentration, -time) %>%
-    mutate(time_h = time / (3600 * time_unit_from_sec)) 
+sim_results_cells <- all_conditions_cells %>%
+  mutate(synthesis = (excess_RNA_synthesis / mole_unit) * (fraction_of_total_RNA / volume),
+         total_target = (total_RNA / mole_unit) * (fraction_of_total_RNA / volume),
+         total_enzyme = miRNA_count / (volume * mole_unit)
 
-  crossing(as.tibble(condition), tidy_out)
-}
-
-sim_results <- all_conditions %>%
-  rowwise() %>% do(miRNA_sim_single(., init_complex_equilibrium = TRUE)) %>% ungroup()
+         ) %>%
+  rowwise() %>% do(miRNA_sim_single(., times_cells, init_complex_equilibrium = TRUE)) %>% ungroup()
 ```
 
-# Modelling Results
+## Modelling Results
 
 Below, we show the landscapes of concentrations of free miRNA targets over time for various coefficients for $k_{cat}$. Each landscape plot corresponds to one of the simulated conditions (fraction of total RNA that are targets, miRNA count, type of cell). The concentration is reported relative to initial concentration of the free miRNA.
 
@@ -281,7 +384,7 @@ plot_concentration_surface <- function(to_show) {
   data.frame()
 }
 
-sim_results %>%group_by(fraction_of_total_RNA) %>% do(plot_concentration_surface(.)) %>% invisible()
+sim_results_cells %>%group_by(fraction_of_total_RNA) %>% do(plot_concentration_surface(.)) %>% invisible()
 
 ```
 
