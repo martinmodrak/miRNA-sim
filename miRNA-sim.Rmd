@@ -3,8 +3,6 @@ title: "Simple miRNA computational modelling"
 author: "Martin Modrak"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
-  word_document: default
-  pdf_document: default
   html_document:
     code_folding: hide
 absract: "This is a supplement to the paper <TODO: paper title>. We describe a simplified mathematical model of the miRNA pathway based on our knowledge of the siRNA pathway."
@@ -23,6 +21,11 @@ library(tibble)
 library(cowplot) #Optional, can be commented out
 library(knitr)
 options(dplyr.show_progress = FALSE)
+
+temp_dir <- "local_temp_data"
+if(!dir.exists(temp_dir)) {
+  dir.create(temp_dir)
+}
 ```
 
 
@@ -30,7 +33,6 @@ options(dplyr.show_progress = FALSE)
 
 * miRNA degradation is modelled as one step process (similar to siRNA/RNAi pathway), but with lower catalytic efficiency than the siRNA pathways
 * The AGO2 concentration is assumed to not be rate limiting, in particular all miRNA is assumed to be loaded on AGO2 at all times
-* We bundle together all miRNA species and all target RNA molecules
 * All miRNA binding events are assumed to be those of pure seed pairing (for seed + additionial base pairing the binding is slightly stronger).
 * only uncleaved free mRNA is observed in experiments (mRNA bound in complex with AGO2 + miRNA is not be observed).
 
@@ -179,16 +181,18 @@ miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) 
     gather(type, concentration, -time) %>%
     mutate(time_h = time / (3600 * time_unit_from_sec), initial_target = state["target"]) 
 
-  crossing(as.tibble(condition), tidy_out)
+  crossing(as_tibble(condition), tidy_out)
 }
 ```
 
 
-# Comparison of concentrations
+# Comparison of concentrations - let7
+
+Since the paper primarily studies the let7 miRNA, we start with a simulation exploring the possible dynamics of a miRNA roughly similar to let7 under various conditions.
 
 ```{r}
 log_scale = TRUE
-N_steps = 100
+N_steps = 10 #TODO: increase to 100 or more
 
 normal_miRNA_cpc_3T3 = 38000
 normal_miRNA_cpc_oocyte = 20000
@@ -205,20 +209,22 @@ if(log_scale) {
 min_miRNA_concentration = (min_miRNA_cpc_3T3 / mole_unit) / volume_3T3
 max_miRNA_concentration = (max_miRNA_cpc_3T3 / mole_unit) / volume_3T3
 
+min_target_concentration = min_miRNA_concentration
+max_target_concentration = max_miRNA_concentration * 100
 
 if(log_scale) {
   miRNA_concentrations = seq(log(min_miRNA_concentration), log(max_miRNA_concentration), length.out = N_steps) %>% exp()
-  target_concentrations = seq(log(min_miRNA_concentration), log(max_miRNA_concentration * 10), length.out = N_steps) %>% exp()
+  target_concentrations = seq(log(min_target_concentration), log(max_target_concentration), length.out = N_steps) %>% exp()
 } else {
   miRNA_concentrations = seq(min_miRNA_concentration, max_miRNA_concentration, length.out = N_steps)
-  target_concentrations = seq(min_miRNA_concentration, max_miRNA_concentration * 10, length.out = N_steps)
+  target_concentrations = seq(min_target_concentration, max_target_concentration, length.out = N_steps)
 }
 
 times_concentration_hours = seq(0, 25, length.out = 101)
 times_concentration = times_concentration_hours * 60 * 60 * time_unit_from_sec
 
 
-k_cat_coeffs_concentration <- 1 / c(1, 2, 4, 5, 10, 20)
+k_cat_coeffs_concentration <- 1 / c(1, 4, 20)
 
 all_conditions_concentration <- tibble(total_enzyme = miRNA_concentrations) %>%
   crossing(tibble(total_target = target_concentrations)) %>%
@@ -228,16 +234,36 @@ cell_info = tibble(condition = c("let7 in 3T3", "let7 in oocyte"),
                    miRNA_concentration = c(normal_miRNA_cpc_3T3 / (mole_unit * volume_3T3), normal_miRNA_cpc_oocyte / (mole_unit * volume_mouse_oocyte)))
 ```
 
+Reformulate via Concentration?!
+
+The let7 miRNA was found to have around `r normal_miRNA_cpc_3T3` copies per cell (cpc) in 3T3 somatic cells and around `r normal_miRNA_cpc_oocyte` cpc in oocytes. To be on the safe side, we explore range from `r min_miRNA_cpc_3T3` cpc to `r max_miRNA_cpc_3T3` cpc. 
+We also do not know, how many let7 targets there are, so we explore range from very low target cpc (`r min_target_concentration`) to much larger number of targets than let7 (`r max_target_concentration`).
 
 ```{r computing_model_concentration}
+read_from_file <- FALSE
+temp_file <- paste0(temp_dir, "/concentration.rds")
+if(file.exists(temp_file)) {
+  results_from_file <- readRDS(temp_file)
+  if(nrow(results_from_file) == nrow(all_conditions_concentration) * length(times_concentration) * 3 && 
+     identical(all_conditions_concentration, results_from_file %>% select(total_enzyme, total_target, k_cat_coeff) %>% distinct())) {
+    read_from_file <- TRUE
+    sim_results_concentration <- results_from_file
+  } else {
+    warning("Data read, but are different")
+  }
+}
 
-sim_results_concentration <- all_conditions_concentration %>%
-  mutate(synthesis = 0
-         ) %>%
-  rowwise() %>% do(miRNA_sim_single(., times_concentration, init_complex_equilibrium = TRUE)) %>% ungroup()
+if(!read_from_file) {
+  sim_results_concentration <- all_conditions_concentration %>%
+    mutate(synthesis = 0
+           ) %>%
+    rowwise() %>% do(miRNA_sim_single(., times_concentration, init_complex_equilibrium = TRUE)) %>% ungroup()
+  
+  saveRDS(sim_results_concentration, temp_file)
+}
 ```
 
-```{r plot_concentration, fig.height=6}
+```{r plot_concentration, fig.height=3.5, fig.width=9}
 plot_efficiency_surface <- function(to_show, time_h, fixed_data) {
   if(log_scale) {
     scale_trans = "log10"
@@ -246,14 +272,19 @@ plot_efficiency_surface <- function(to_show, time_h, fixed_data) {
   }
  p <- to_show %>% filter(type == "target", time_h == !!time_h) %>% 
    mutate(concentration = if_else(concentration < 0, 0, concentration),
-          relative_concentration = concentration / initial_target) %>%
+          relative_concentration = concentration / total_target) %>%
   ggplot(aes(x = total_enzyme, y = total_target, fill = relative_concentration, z = relative_concentration)) + 
    geom_raster() + 
-   geom_vline(data = fixed_data, mapping = aes(xintercept = miRNA_concentration, color = condition)) +
-   scale_fill_distiller("Target uncleaved", palette = "Spectral") +
-   facet_wrap(~k_cat_coeff, labeller= labeller(k_cat_coeff = function(x) {paste0("coeff = ",x)})) +
+   #geom_vline(data = fixed_data, mapping = aes(xintercept = miRNA_concentration, color = condition, linetype = condition), size = 1.4) +
+   geom_point(data = fixed_data, mapping = aes(x = miRNA_concentration, y = min_target_concentration / 5, shape = condition), inherit.aes = FALSE, size = 2) +
+   geom_rect(data = fixed_data, mapping = aes(xmin = miRNA_concentration * 0.75, xmax = miRNA_concentration * 1.33, ymin = min_target_concentration / 3, ymax = max_target_concentration * 3), color = "lightgreen", fill = "transparent", inherit.aes = FALSE) +
+   #scale_fill_distiller("Target uncleaved", palette = "Spectral") +
+   scale_fill_gradient("Target uncleaved", low = "#505050", high = "#f0f0f0") +
+   scale_linetype_manual(values = c("solid","dotted")) + 
+   scale_shape_manual("Condition", values = c("triangle","triangle open")) +
+   facet_wrap(~k_cat_coeff, labeller= labeller(k_cat_coeff = function(x) {paste0("Efficiency = ",x)})) +
    scale_x_continuous("miRNA concentration [nM]", trans = scale_trans) +
-   scale_y_continuous("initial target concentration [nM]", trans = scale_trans) +
+   scale_y_continuous("Initial target concentration [nM]", trans = scale_trans) +
    ggtitle(paste0("Proportion target uncleaved at ", time_h,"h"))
   
  print(p)
@@ -266,6 +297,9 @@ plot_efficiency_surface(sim_results_concentration, 20, cell_info)
 
 
 # Comparison of cell types
+
+
+* We bundle together all miRNA species and all target RNA molecules
 
 
 ```{r}
@@ -377,7 +411,8 @@ plot_concentration_surface <- function(to_show) {
   ungroup() %>%
   ggplot(aes(x=time_h, y = k_cat_coeff, fill = relative_concentration, z = relative_concentration)) + 
    geom_raster() + 
-   scale_fill_distiller(palette = "Spectral") +
+   #scale_fill_distiller(palette = "Spectral") +
+      scale_fill_gradient("Target uncleaved", low = "#505050", high = "#f0f0f0") +
    facet_grid(miRNA_count~name, labeller= labeller(miRNA_count = label_miRNA_count)) +
    ggtitle(paste("targets/total RNA =", to_show$fraction_of_total_RNA[1]))
   print(p)
