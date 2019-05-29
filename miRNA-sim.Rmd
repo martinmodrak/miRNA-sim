@@ -5,12 +5,12 @@ date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
     code_folding: hide
-absract: "This is a supplement to the paper <TODO: paper title>. We describe a simplified mathematical model of the miRNA pathway based on our knowledge of the siRNA pathway."
+abstract: "This is a supplement to the paper <TODO: paper title>. We describe a simplified mathematical model of the miRNA pathway based on our knowledge of the RNAi pathway."
 ---
 
 
 ```{r setup, message=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+#knitr::opts_chunk$set(echo = FALSE)
 #Next line is useful for Word output
 #knitr::opts_chunk$set(fig.width = 9)
 library(deSolve)
@@ -31,14 +31,15 @@ if(!dir.exists(temp_dir)) {
 
 # Assumptions
 
-* miRNA degradation is modelled as one step process (similar to siRNA/RNAi pathway), but with lower catalytic efficiency than the siRNA pathways
+* miRNA degradation is modelled as one step process (similar to RNAi pathway), but with lower catalytic efficiency than the RNAi pathways
 * The AGO2 concentration is assumed to not be rate limiting, in particular all miRNA is assumed to be loaded on AGO2 at all times
 * All miRNA binding events are assumed to be those of pure seed pairing (for seed + additionial base pairing the binding is slightly stronger).
-* only uncleaved free mRNA is observed in experiments (mRNA bound in complex with AGO2 + miRNA is not be observed).
+* Only uncleaved free mRNA is observed in experiments (mRNA bound in complex with AGO2 + miRNA is not be observed).
+* No mRNA synthesis is taking place.
 
 # Mathematical model
 
-The assumptions above lead to a simple description of the system as a set of differential equations. 
+The assumptions above lead to a simple description of the system as a set of differential equations, identical to the ones used in Michaelis-Menten kinetics. 
 Denoting the concentration of free mRNA molecules with target sites for the miRNA in question as $[\mathrm{target}]$, the concentration of mRNA + miRNA + AGO2 complex as $[\mathrm{complex}]$ and the concentration of the miRNA + AGO2 complex as $[\mathrm{enzyme}]$ The kinetics are descibed as:
 
 $$
@@ -49,7 +50,7 @@ $$
 \end{align}
 $$
 
-Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system and $s_{excess}$ is the excess synthesis rate of new mRNA (i.e. synthesis minus degradation by normal cell processes). This is the same system as used in Michaelis-Menten kinetics.
+Where $k_{on}$,${k_{off}}$ and $k_{cat}$ are the reaction rates in the system. 
 
 # Input data
 
@@ -62,12 +63,12 @@ mole_unit_from_mole <- 1e9
 #Using 1/10th second as time unit (some sims need fine resolution)
 time_unit_from_sec <- 1
 
-K_M_siRNA <- 0.1 * mole_unit_from_nano_mole
-k_on_siRNA <- 3.6e7 / (mole_unit_from_mole * time_unit_from_sec)
+K_M_RNAi <- 0.1 * mole_unit_from_nano_mole
+k_on_RNAi <- 3.6e7 / (mole_unit_from_mole * time_unit_from_sec)
 
-k_off_siRNA <- 7.7e-4 / time_unit_from_sec
-k_cat_siRNA <- 8.1e-4 / time_unit_from_sec
-k_cat_siRNA_computed <- K_M_siRNA * k_on_siRNA - k_off_siRNA
+k_off_RNAi <- 7.7e-4 / time_unit_from_sec
+k_cat_RNAi <- 8.1e-4 / time_unit_from_sec
+k_cat_RNAi_computed <- K_M_RNAi * k_on_RNAi - k_off_RNAi
 
 k_on_miRNA <- 0.2e8 / (mole_unit_from_mole * time_unit_from_sec)
 k_off_miRNA <- 0.051e-2 / time_unit_from_sec
@@ -77,10 +78,6 @@ volume_3T3 <- 3e-12 #4.4e-12
 total_RNA_3T3 <- 5e5
 
 volume_mouse_oocyte <- 260e-12
-
-
-k_cat_coeff_step = 0.05
-k_cat_coeffs <- tibble(k_cat_coeff = seq(0.05,1, by = k_cat_coeff_step))
 
 
 one_step_degradation <- function(t, state, parameters) {
@@ -122,24 +119,15 @@ plot_ode_result <- function(out, title) {
 ```
 
 
-We take $k_{on}$ and $k_{off}$ for the mouse miRNA system from from Wee, Flores-Jasso, Salomon & Zamore 2012, Argonaute Divides Its RNA Guide into Domains with Distinct Functions and RNA-Binding Properties, Figure 7. The same source also gives $k_{cat}$ for the siRNA pathway, which provides an upper bound on miRNA pathway efficiency.
+We take $k_{on}$ and $k_{off}$ for the mouse miRNA system from from Wee, Flores-Jasso, Salomon & Zamore 2012, [Argonaute Divides Its RNA Guide into Domains with Distinct Functions and RNA-Binding Properties](https://doi.org/10.1016/j.cell.2012.10.036), Figure 7. The same source also gives $k_{cat}$ for the RNAi pathway, which provides an upper bound on miRNA pathway efficiency.
 
-We note that the $k_{cat}$ value for the siRNA pathway in the source is about a factor of 3.5 smaller from what would be calculated from the reported $k_{on}$, $k_{off}$ and $K_{M}$. This is because $k_{on}$, $k_{off}$ were determined in a different experiment than $K_M$ and $k_{cat}$, but gives a useful insight into generalizability of the value.
+We note that the $k_{cat}$ value for the RNAi pathway in the source ($`r k_cat_RNAi * time_unit_from_sec` s^{-1}$) is about a factor of 3.5 smaller from what would be calculated from the reported $k_{on}$, $k_{off}$ and $K_{M}$ ($`r k_cat_RNAi_computed * time_unit_from_sec`  s^{-1}$). This is because $k_{on}$, $k_{off}$ were determined in a different experiment than $K_M$ and $k_{cat}$, but gives a useful insight into generalizability of the value.
 
-```{r}
-tibble(k_cat_reported = k_cat_siRNA * time_unit_from_sec, k_cat_computed =  k_cat_siRNA_computed * time_unit_from_sec) %>% mutate(computed_to_reported_ratio = k_cat_computed / k_cat_reported) %>% kable()
-```
-
-For the follwoing we use the siRNA $k_{cat}$ as reported. 
-We assume the miRNA $k_{cat}$ to be lower than in siRNA, we test a range of values of a scaling coefficent $k_{cat,\mathrm{miRNA}} = k_{coeff} k_{cat,\mathrm{siRNA}}$:
-
-```{r}
-tibble(k_coeff_min = min(k_cat_coeffs$k_cat_coeff), k_coeff_max = max(k_cat_coeffs$k_cat_coeff), num_intermediate_values = nrow(k_cat_coeffs)) %>% kable()
-```
+For the following we use the RNAi $k_{cat}$ as reported. 
 
 ```{r}
 miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) {
-  params <- c(k_cat = k_cat_siRNA * condition$k_cat_coeff, 
+  params <- c(k_cat = k_cat_RNAi * condition$k_cat_coeff, 
               k_on = k_on_miRNA, 
               k_off = k_off_miRNA,
               synthesis = condition$synthesis
@@ -151,6 +139,26 @@ miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) 
   
   if(init_complex_equilibrium) {
     #Init the enzyme and complex at equilibrium
+    
+
+    # Computing the initial complex concentration at equilibrium
+    
+    # K_D = k_on / k_off
+    # c/t*e = K_D
+    # c = t*e*K_D
+    # 
+    # t  = t_i - c
+    # e  = e_i - c
+    # 
+    # c = (t_i - c)*(e_i-c)*K_D
+    # 
+    # c = c^2 * K_D + c*(-e_i -t_i)*K_D + e_i * t_i * K_D
+    # 0 = c^2 * K_D + c*((-e_i -t_i)*K_D - 1) + e_i * t_i * K_D
+    # 
+    # D = ((-e_i -t_i)*K_D - 1)^2 - 4*e_i * t_i * K_D^2
+    # c = ( -((-e_i -t_i)*K_D - 1)  +- sqrt(D) ) / (2 * K_D)
+    # c = ( (e_i + t_i) * K_D + 1 + sqrt(D) ) / (2 * K_D)
+
     K_D <-  params["k_on"] / params["k_off"]
     names(K_D) <- NULL #For some reason, this has name and it messes up later computations
     complex_D <- (((total_target + total_enzyme) * K_D + 1) ^ 2) - 4 * total_target * total_enzyme * (K_D^2)
@@ -165,7 +173,7 @@ miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) 
     }
     check <- initial_complex / (free_target * free_enzyme)
     rel_diff <- abs(check - K_D) / K_D
-    if(rel_diff > 1e-4) {
+    if(rel_diff > 1e-3) {
       stop(paste("Not equilibrium, K_D =  ",K_D, "check = ", check, "  diff = ", rel_diff))
     }
   
@@ -188,16 +196,16 @@ miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) 
 
 # Comparison of concentrations - let7
 
-Since the paper primarily studies the let7 miRNA, we start with a simulation exploring the possible dynamics of a miRNA roughly similar to let7 under various conditions.
+Since the paper primarily studies the let7 miRNA, we start with a simulation exploring the possible dynamics of a miRNA roughly similar to let7 under various concentrations of the miRNA and its targets.
 
 ```{r}
 log_scale = TRUE
-N_steps = 10 #TODO: increase to 100 or more
+N_steps = 100
 
 normal_miRNA_cpc_3T3 = 38000
 normal_miRNA_cpc_oocyte = 20000
 
-min_miRNA_cpc_3T3 =  100
+min_miRNA_cpc_oocyte =  normal_miRNA_cpc_oocyte / 2
 
 
 if(log_scale) {
@@ -206,7 +214,7 @@ if(log_scale) {
   max_miRNA_cpc_3T3 = normal_miRNA_cpc_3T3 * 2
 }
 
-min_miRNA_concentration = (min_miRNA_cpc_3T3 / mole_unit) / volume_3T3
+min_miRNA_concentration = (min_miRNA_cpc_oocyte / mole_unit) / volume_mouse_oocyte
 max_miRNA_concentration = (max_miRNA_cpc_3T3 / mole_unit) / volume_3T3
 
 min_target_concentration = min_miRNA_concentration
@@ -231,15 +239,25 @@ all_conditions_concentration <- tibble(total_enzyme = miRNA_concentrations) %>%
   crossing(k_cat_coeff = k_cat_coeffs_concentration) 
   
 cell_info = tibble(condition = c("let7 in 3T3", "let7 in oocyte"),
-                   miRNA_concentration = c(normal_miRNA_cpc_3T3 / (mole_unit * volume_3T3), normal_miRNA_cpc_oocyte / (mole_unit * volume_mouse_oocyte)))
+                   cpc = c(normal_miRNA_cpc_3T3, normal_miRNA_cpc_oocyte),
+                   volume = c(volume_3T3, volume_mouse_oocyte)) %>%
+  mutate(miRNA_concentration = c(cpc / (mole_unit * volume))) %>% arrange(miRNA_concentration)
 ```
 
-Reformulate via Concentration?!
 
-The let7 miRNA was found to have around `r normal_miRNA_cpc_3T3` copies per cell (cpc) in 3T3 somatic cells and around `r normal_miRNA_cpc_oocyte` cpc in oocytes. To be on the safe side, we explore range from `r min_miRNA_cpc_3T3` cpc to `r max_miRNA_cpc_3T3` cpc. 
-We also do not know, how many let7 targets there are, so we explore range from very low target cpc (`r min_target_concentration`) to much larger number of targets than let7 (`r max_target_concentration`).
+To determine which concentration ranges should we test, we take the measurements of copies per cell (cpc) of the let7 miRNA in 3T3 somatic cells and oocytes:
+
+```{r}
+cell_info %>% mutate(`copies per cell` = cpc, `volume [pl]` = volume * 10^12, `concentration [nM]` = miRNA_concentration) %>% select(-volume, -cpc, -miRNA_concentration) %>% kable()
+```
+
+This gives us anchor points to include in the simulations - we ended up testing miRNA concentrations in the range from `r round(min_miRNA_concentration,3)`nM to `r round(max_miRNA_concentration / 1000,1)`μM. We also do not know, how many let7 targets there are, so we explore range from very low target concentration (`r round(min_target_concentration, 3)`nM) to much larger concentration of targets than let7 (`r round(max_target_concentration / 1000)`μM).
+
+We assume the miRNA $k_{cat}$ to be lower than in RNAi, via relative efficiency koefficient $r$ where $k_{cat,\mathrm{miRNA}} = r \cdot k_{cat,\mathrm{RNAi}}$. Here we check $r$ to be either `r paste(k_cat_coeffs_concentration[1:(length(k_cat_coeffs_concentration) - 1)], sep = ",")` or `r k_cat_coeffs_concentration[length(k_cat_coeffs_concentration)]`. We ran a simulation of the kinetics for each combination of those possible parameters.
 
 ```{r computing_model_concentration}
+#Note: this may taka quite a while, but not paralellized to avoid additional dependencies.
+
 read_from_file <- FALSE
 temp_file <- paste0(temp_dir, "/concentration.rds")
 if(file.exists(temp_file)) {
@@ -263,6 +281,8 @@ if(!read_from_file) {
 }
 ```
 
+To see the effect we plot the proportion of the target mRNAs that is left uncleaved 20 hours relative to the initial concentration.
+
 ```{r plot_concentration, fig.height=3.5, fig.width=9}
 plot_efficiency_surface <- function(to_show, time_h, fixed_data) {
   if(log_scale) {
@@ -276,41 +296,34 @@ plot_efficiency_surface <- function(to_show, time_h, fixed_data) {
   ggplot(aes(x = total_enzyme, y = total_target, fill = relative_concentration, z = relative_concentration)) + 
    geom_raster() + 
    #geom_vline(data = fixed_data, mapping = aes(xintercept = miRNA_concentration, color = condition, linetype = condition), size = 1.4) +
-   geom_point(data = fixed_data, mapping = aes(x = miRNA_concentration, y = min_target_concentration / 5, shape = condition), inherit.aes = FALSE, size = 2) +
-   geom_rect(data = fixed_data, mapping = aes(xmin = miRNA_concentration * 0.75, xmax = miRNA_concentration * 1.33, ymin = min_target_concentration / 3, ymax = max_target_concentration * 3), color = "lightgreen", fill = "transparent", inherit.aes = FALSE) +
+   geom_point(data = fixed_data, mapping = aes(x = miRNA_concentration, y = min_target_concentration / 3, shape = condition), inherit.aes = FALSE, size = 2) +
+   geom_rect(data = fixed_data, mapping = aes(xmin = miRNA_concentration * 0.75, xmax = miRNA_concentration * 1.33, ymin = min_target_concentration / 1.5, ymax = max_target_concentration * 1.5), color = "lightgreen", fill = "transparent", inherit.aes = FALSE) +
    #scale_fill_distiller("Target uncleaved", palette = "Spectral") +
-   scale_fill_gradient("Target uncleaved", low = "#505050", high = "#f0f0f0") +
+   scale_fill_gradient("Target uncleaved", low = "#505050", high = "#f0f0f0", limits = c(0,1)) +
    scale_linetype_manual(values = c("solid","dotted")) + 
    scale_shape_manual("Condition", values = c("triangle","triangle open")) +
-   facet_wrap(~k_cat_coeff, labeller= labeller(k_cat_coeff = function(x) {paste0("Efficiency = ",x)})) +
+   facet_wrap(~k_cat_coeff, labeller= labeller(k_cat_coeff = function(x) {paste0("Rel. eff. = ",x)})) +
    scale_x_continuous("miRNA concentration [nM]", trans = scale_trans) +
    scale_y_continuous("Initial target concentration [nM]", trans = scale_trans) +
    ggtitle(paste0("Proportion target uncleaved at ", time_h,"h"))
-  
- print(p)
-  
+
+ p  
 }
 
-plot_efficiency_surface(sim_results_concentration, 20, cell_info)
+concentration_plot <- plot_efficiency_surface(sim_results_concentration, 20, cell_info)
+
+concentration_plot
+
+#Saving the plot for publication
+ggsave(paste0(temp_dir,"/simulation_concentrations.pdf"), concentration_plot, width = 9, height = 3.5)
 
 ```
 
+In the plot above, the triangles and green rectangles highlight the area of the heatmaps that correspond to the expected let7 concentrations in 3T3 and oocytes. The main takeaway is that across the whole range of relative efficency, there is a big range of initial target concentrations where we would observe almost no repression in oocytes while the target would be almost completely repressed in 3T3 cells, simply due to stochiometry.
 
 # Comparison of cell types
 
-
-* We bundle together all miRNA species and all target RNA molecules
-
-
 ```{r}
-# cells <- tibble(
-#   name = c("3T3","mouse oocyte", "pig oocyte"),
-#   volume = c(volume_3T3,260e-12, 520e-12),
-#   total_RNA = c(total_RNA_3T3, 25e6, 50e6),
-#   excess_RNA_synthesis = c(0, 0, 0)
-# ) %>% mutate(
-#   name = factor(name, levels = name)
-# )
 cells <- tibble(
   name = c("3T3","mouse oocyte"),
   volume = c(volume_3T3, volume_mouse_oocyte),
@@ -322,9 +335,7 @@ cells <- tibble(
 
 
 target_pools <- tibble(fraction_of_total_RNA = c(0.1,0.2))
-#target_pools <- tibble(fraction_of_total_RNA = c(0.005,0.01,0.02, 0.04, 0.06, 0.1, 0.2))
 
-#miRNA_counts <- tibble(miRNA_count = c(5e3,1e4,5e4, 2e5 ))
 #Used with Shubha for experimental guess
 #miRNA_counts <- tibble(miRNA_count = c(42000, 1e5, 5e5, 1e6, 5e6))
 #miRNA_counts <- tibble(miRNA_count = c(2e4,5e4, 1e5, 1e6, 5e6))
@@ -334,13 +345,18 @@ times_cells <- seq(0, 25 * 60 * 60 * time_unit_from_sec, length.out = 101)
 time_step <- diff(times_cells)[1]
 
 
+k_cat_coeffs <- tibble(k_cat_coeff = seq(0.05,1, length.out = 101))
+
+
 all_conditions_cells <- crossing(cells, target_pools, miRNA_counts, k_cat_coeffs)
 ```
 
+An additional way to look at the same results is to not vary the concentrations directly, but start with copies per cell in the individual cell types. Here, we will treat all the miRNA species as interchangeable. We test a range of relative efficiencies, starting at `r min(k_cat_coeffs$k_cat_coeff)` and ending at `r max(k_cat_coeffs$k_cat_coeff)`.
 
-We test dynamics in two cell types (3T3 and oocyte), with varying levels of excess mRNA synthesis as shown bellow - volume in picolitres, total_RNA in copies per cell (cpc) and excess RNA synthesis in added cpc per hour after accounting for normal degradation processes:
+
+We test dynamics in two cell types (3T3 and oocyte) as shown bellow::
 ```{r}
-cells %>% mutate(volume_pl = volume * 10^12, excess_RNA_synthesis = excess_RNA_synthesis * 3600) %>% select(-volume) %>%  kable()
+cells %>% transmute(name = name, `total RNA [cpc]` = total_RNA, `volume [pl]` = volume * 10^12) %>%  kable()
 ```
 
 We test different counts (cpc) of the miRNA species: 
@@ -356,53 +372,48 @@ target_pools %>% kable()
 
 We solve the differential equation system for all possible combination of those values. 
 
-```{r}
-# Getting the initial complex concentration at equilibrium
-
-# K_D = k_on / k_off
-# c/t*e = K_D
-# c = t*e*K_D
-# 
-# t  = t_i - c
-# e  = e_i - c
-# 
-# c = (t_i - c)*(e_i-c)*K_D
-# 
-# c = c^2 * K_D + c*(-e_i -t_i)*K_D + e_i * t_i * K_D
-# 0 = c^2 * K_D + c*((-e_i -t_i)*K_D - 1) + e_i * t_i * K_D
-# 
-# D = ((-e_i -t_i)*K_D - 1)^2 - 4*e_i * t_i * K_D^2
-# c = ( -((-e_i -t_i)*K_D - 1)  +- sqrt(D) ) / (2 * K_D)
-# c = ( (e_i + t_i) * K_D + 1 + sqrt(D) ) / (2 * K_D)
-
-```
 
 
 ```{r computing_model_cells}
+read_from_file <- FALSE
+temp_file <- paste0(temp_dir, "/cells.rds")
+if(file.exists(temp_file)) {
+  results_from_file <- readRDS(temp_file)
+  if(nrow(results_from_file) == nrow(all_conditions_cells) * length(times_cells) * 3 && 
+     identical(all_conditions_cells, results_from_file %>% select(name, volume, total_RNA, excess_RNA_synthesis, fraction_of_total_RNA, miRNA_count, k_cat_coeff) %>% distinct())) {
+    read_from_file <- TRUE
+    sim_results_cells <- results_from_file
+  } else {
+    warning("Data read, but are different")
+  }
+}
 
-sim_results_cells <- all_conditions_cells %>%
-  mutate(synthesis = (excess_RNA_synthesis / mole_unit) * (fraction_of_total_RNA / volume),
-         total_target = (total_RNA / mole_unit) * (fraction_of_total_RNA / volume),
-         total_enzyme = miRNA_count / (volume * mole_unit)
-
-         ) %>%
-  rowwise() %>% do(miRNA_sim_single(., times_cells, init_complex_equilibrium = TRUE)) %>% ungroup()
+if(!read_from_file) {
+  sim_results_cells <- all_conditions_cells %>%
+    mutate(synthesis = (excess_RNA_synthesis / mole_unit) * (fraction_of_total_RNA / volume),
+           total_target = (total_RNA / mole_unit) * (fraction_of_total_RNA / volume),
+           total_enzyme = miRNA_count / (volume * mole_unit)
+  
+           ) %>%
+    rowwise() %>% do(miRNA_sim_single(., times_cells, init_complex_equilibrium = TRUE)) %>% ungroup()
+  
+  saveRDS(sim_results_cells, temp_file)
+}
 ```
 
-## Modelling Results
+Below, we show the landscapes of concentrations of free miRNA targets over time for various relative efficiencies. Each heatmap corresponds to one of the simulated conditions (fraction of total RNA that are targets, miRNA count, type of cell). The concentration is reported relative to initial concentration of the free miRNA.
 
-Below, we show the landscapes of concentrations of free miRNA targets over time for various coefficients for $k_{cat}$. Each landscape plot corresponds to one of the simulated conditions (fraction of total RNA that are targets, miRNA count, type of cell). The concentration is reported relative to initial concentration of the free miRNA.
-
-```{r, fig.height=6}
+```{r, fig.height=4.5, fig.width=7}
 plot_concentration_surface <- function(to_show) {
   if(length(unique(to_show$fraction_of_total_RNA)) != 1) {
     stop("Has to be unique")
   }
   
   label_miRNA_count <- function(value) {
-    if_else(as.numeric(value) < 1e6, paste0("#=",round(as.numeric(value)/1000),"K"),
-      paste0("#=",round(as.numeric(value)/1e6),"M"))
+    value_proper = if_else(as.numeric(value) < 1e6, paste0(round(as.numeric(value)/1000),"K"),
+      paste0(round(as.numeric(value)/1e6),"M"))
     
+    paste0("miRNA cpc = ", value_proper)
   }
   
  p <- to_show %>% filter(type == "target") %>% group_by(fraction_of_total_RNA, miRNA_count, name) %>% 
@@ -412,8 +423,10 @@ plot_concentration_surface <- function(to_show) {
   ggplot(aes(x=time_h, y = k_cat_coeff, fill = relative_concentration, z = relative_concentration)) + 
    geom_raster() + 
    #scale_fill_distiller(palette = "Spectral") +
-      scale_fill_gradient("Target uncleaved", low = "#505050", high = "#f0f0f0") +
+      scale_fill_gradient("Target uncleaved", low = "#505050", high = "#f0f0f0", limits = c(0,1)) +
    facet_grid(miRNA_count~name, labeller= labeller(miRNA_count = label_miRNA_count)) +
+   scale_y_continuous("relative efficiency") +
+   scale_x_continuous("time [h]") +
    ggtitle(paste("targets/total RNA =", to_show$fraction_of_total_RNA[1]))
   print(p)
   data.frame()
@@ -423,15 +436,8 @@ sim_results_cells %>%group_by(fraction_of_total_RNA) %>% do(plot_concentration_s
 
 ```
 
-We see that even with the exact same miRNA degradation kinetics, all target mRNA is expected to be degraded in 3T3 cells across a broad range of conditions, while in oocytes we don't see noticeable degradation in most conditions. 
+We see that even with the exact same miRNA degradation kinetics, all target mRNA is expected to be quickly degraded in 3T3 cells across a broad range of conditions, while in oocytes we don't see noticeable degradation in most conditions.
 
-TODO: the plots are not very colorblind-friendly, make also contour plots.
+# Conclusions
 
-TODO:
-small plots:
-miRNA concentration (10 to 1e5 cpc in 3T3) x target concentration relative to miRNA concetration
-color: efficiency at 20hours
-
-mark fibroblasts, oocytes on the small plots
-
-grid - k_cat_coeff (possibly time)
+Both views of the simulations show that it is plausible for the differing stochiometry to account for differing miRNA activity in somatic cells and oocytes.
