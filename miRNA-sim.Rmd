@@ -28,6 +28,13 @@ if(!dir.exists(temp_dir)) {
 }
 ```
 
+Notes: rel. eff. 0.1 instead of 0.05 ? Check.
+Invert - black 1, white 0
+Check concetrations in line with table
+Render without rectangles for concentration
+Log scale by each order 1 10 100
+Rewrite the assumptions for results
+Plots for luciferase assays
 
 # Assumptions
 
@@ -299,7 +306,7 @@ plot_efficiency_surface <- function(to_show, time_h, fixed_data) {
    geom_point(data = fixed_data, mapping = aes(x = miRNA_concentration, y = min_target_concentration / 3, shape = condition), inherit.aes = FALSE, size = 2) +
    geom_rect(data = fixed_data, mapping = aes(xmin = miRNA_concentration * 0.75, xmax = miRNA_concentration * 1.33, ymin = min_target_concentration / 1.5, ymax = max_target_concentration * 1.5), color = "lightgreen", fill = "transparent", inherit.aes = FALSE) +
    #scale_fill_distiller("Target uncleaved", palette = "Spectral") +
-   scale_fill_gradient("Target uncleaved", low = "#505050", high = "#f0f0f0", limits = c(0,1)) +
+   scale_fill_gradient("Target uncleaved", high = "#505050", low = "#f0f0f0", limits = c(0,1)) +
    scale_linetype_manual(values = c("solid","dotted")) + 
    scale_shape_manual("Condition", values = c("triangle","triangle open")) +
    facet_wrap(~k_cat_coeff, labeller= labeller(k_cat_coeff = function(x) {paste0("Rel. eff. = ",x)})) +
