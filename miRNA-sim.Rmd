@@ -8,6 +8,13 @@ output:
 abstract: "This is a supplement to the paper <TODO: paper title>. We describe a simplified mathematical model of the miRNA pathway based on our knowledge of the RNAi pathway."
 ---
 
+Notes: 
+[x] rel. eff. 0.1 instead of 0.05 ? .
+[] Check concetrations in line with table
+[x] Render without rectangles for concentration
+[x] Log scale by each order 1 10 100
+[] Rewrite the assumptions for results
+[] Plots for luciferase assays
 
 ```{r setup, message=FALSE}
 #knitr::opts_chunk$set(echo = FALSE)
@@ -27,14 +34,6 @@ if(!dir.exists(temp_dir)) {
   dir.create(temp_dir)
 }
 ```
-
-Notes: rel. eff. 0.1 instead of 0.05 ? Check.
-Invert - black 1, white 0
-Check concetrations in line with table
-Render without rectangles for concentration
-Log scale by each order 1 10 100
-Rewrite the assumptions for results
-Plots for luciferase assays
 
 # Assumptions
 
@@ -239,7 +238,7 @@ times_concentration_hours = seq(0, 25, length.out = 101)
 times_concentration = times_concentration_hours * 60 * 60 * time_unit_from_sec
 
 
-k_cat_coeffs_concentration <- 1 / c(1, 4, 20)
+k_cat_coeffs_concentration <- 1 / c(1, 4, 10)
 
 all_conditions_concentration <- tibble(total_enzyme = miRNA_concentrations) %>%
   crossing(tibble(total_target = target_concentrations)) %>%
@@ -291,44 +290,58 @@ if(!read_from_file) {
 To see the effect we plot the proportion of the target mRNAs that is left uncleaved 20 hours relative to the initial concentration.
 
 ```{r plot_concentration, fig.height=3.5, fig.width=9}
-plot_efficiency_surface <- function(to_show, time_h, fixed_data) {
+my_break_function <- function(limits) {
+  min_order <- round(log10(limits[1]))
+  max_order <- round(log10(limits[2]))
+  10 ^ (min_order:max_order)
+}
+
+plot_efficiency_surface <- function(to_show, time_h, fixed_data, for_paper = FALSE) {
   if(log_scale) {
     scale_trans = "log10"
   } else {
     scale_trans = "identity"
   }
+
+  
+ if(for_paper) {
+   fixed_data_highlight <- NULL
+ } else {
+    fixed_data_highlight <- geom_rect(data = fixed_data, mapping = aes(xmin = miRNA_concentration * 0.75, xmax = miRNA_concentration * 1.33, ymin = min_target_concentration / 1.5, ymax = max_target_concentration * 1.5), color = "lightgreen", fill = "transparent", inherit.aes = FALSE)
+ }
+  
  p <- to_show %>% filter(type == "target", time_h == !!time_h) %>% 
    mutate(concentration = if_else(concentration < 0, 0, concentration),
           relative_concentration = concentration / total_target) %>%
   ggplot(aes(x = total_enzyme, y = total_target, fill = relative_concentration, z = relative_concentration)) + 
    geom_raster() + 
-   #geom_vline(data = fixed_data, mapping = aes(xintercept = miRNA_concentration, color = condition, linetype = condition), size = 1.4) +
    geom_point(data = fixed_data, mapping = aes(x = miRNA_concentration, y = min_target_concentration / 3, shape = condition), inherit.aes = FALSE, size = 2) +
-   geom_rect(data = fixed_data, mapping = aes(xmin = miRNA_concentration * 0.75, xmax = miRNA_concentration * 1.33, ymin = min_target_concentration / 1.5, ymax = max_target_concentration * 1.5), color = "lightgreen", fill = "transparent", inherit.aes = FALSE) +
-   #scale_fill_distiller("Target uncleaved", palette = "Spectral") +
+   fixed_data_highlight +
    scale_fill_gradient("Target uncleaved", high = "#505050", low = "#f0f0f0", limits = c(0,1)) +
    scale_linetype_manual(values = c("solid","dotted")) + 
    scale_shape_manual("Condition", values = c("triangle","triangle open")) +
    facet_wrap(~k_cat_coeff, labeller= labeller(k_cat_coeff = function(x) {paste0("Rel. eff. = ",x)})) +
-   scale_x_continuous("miRNA concentration [nM]", trans = scale_trans) +
-   scale_y_continuous("Initial target concentration [nM]", trans = scale_trans) +
+   scale_x_continuous("miRNA concentration [nM]", trans = scale_trans, breaks = my_break_function) +
+   scale_y_continuous("Initial target concentration [nM]", trans = scale_trans, breaks = my_break_function) +
    ggtitle(paste0("Proportion target uncleaved at ", time_h,"h"))
 
  p  
 }
 
-concentration_plot <- plot_efficiency_surface(sim_results_concentration, 20, cell_info)
+plot_efficiency_surface(sim_results_concentration, 20, cell_info)
 
-concentration_plot
+concentration_plot_for_paper <- plot_efficiency_surface(sim_results_concentration, 20, cell_info, for_paper = TRUE)
 
 #Saving the plot for publication
 for(type in c(".png",".svg")) {
-  ggsave(paste0(temp_dir,"/simulation_concentrations", type), concentration_plot, width = 9, height = 3.5)
+  ggsave(paste0(temp_dir,"/simulation_concentrations", type), concentration_plot_for_paper, width = 9, height = 3.5)
 }
+
 
 ```
 
 In the plot above, the triangles and green rectangles highlight the area of the heatmaps that correspond to the expected let7 concentrations in 3T3 and oocytes. The main takeaway is that across the whole range of relative efficency, there is a big range of initial target concentrations where we would observe almost no repression in oocytes while the target would be almost completely repressed in 3T3 cells, simply due to stochiometry.
+
 
 # Comparison of cell types
 
