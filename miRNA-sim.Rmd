@@ -315,7 +315,9 @@ concentration_plot <- plot_efficiency_surface(sim_results_concentration, 20, cel
 concentration_plot
 
 #Saving the plot for publication
-ggsave(paste0(temp_dir,"/simulation_concentrations.pdf"), concentration_plot, width = 9, height = 3.5)
+for(type in c(".png",".svg")) {
+  ggsave(paste0(temp_dir,"/simulation_concentrations", type), concentration_plot, width = 9, height = 3.5)
+}
 
 ```
 

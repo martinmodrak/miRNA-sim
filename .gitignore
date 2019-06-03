@@ -37,7 +37,7 @@ rsconnect/
 
 *.nb.html
 /papers/
-
+/local_temp_data/
 
 # Knitr outputs and tmp files
 *.docx
@@ -46,3 +46,4 @@ rsconnect/
 *.log
 *.tex
 /*_files/
+
