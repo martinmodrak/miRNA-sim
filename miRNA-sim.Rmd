@@ -10,7 +10,7 @@ abstract: "This is a supplement to the paper <TODO: paper title>. We describe a 
 
 Notes: 
 [x] rel. eff. 0.1 instead of 0.05 ? .
-[] Check concetrations in line with table
+[x] Check concetrations in line with table
 [x] Render without rectangles for concentration
 [x] Log scale by each order 1 10 100
 [] Rewrite the assumptions for results
@@ -35,10 +35,13 @@ if(!dir.exists(temp_dir)) {
 }
 ```
 
+*Source for this file is also available at https://github.com/martinmodrak/miRNA-sim*
+
 # Assumptions
 
 * miRNA degradation is modelled as one step process (similar to RNAi pathway), but with lower catalytic efficiency than the RNAi pathways
 * The AGO2 concentration is assumed to not be rate limiting, in particular all miRNA is assumed to be loaded on AGO2 at all times
+* The concentration of AGO2 + miRNA complex is assumed to be constant.
 * All miRNA binding events are assumed to be those of pure seed pairing (for seed + additionial base pairing the binding is slightly stronger).
 * Only uncleaved free mRNA is observed in experiments (mRNA bound in complex with AGO2 + miRNA is not be observed).
 * No mRNA synthesis is taking place.
@@ -50,7 +53,7 @@ Denoting the concentration of free mRNA molecules with target sites for the miRN
 
 $$
 \begin{align}
-\frac{\mathrm{d}[\mathrm{target}]}{\mathrm{d}t} &= s_{excess}-k_{on}[\mathrm{target}][\mathrm{enzyme}] + k_{off}[\mathrm{complex}] \\
+\frac{\mathrm{d}[\mathrm{target}]}{\mathrm{d}t} &= -k_{on}[\mathrm{target}][\mathrm{enzyme}] + k_{off}[\mathrm{complex}] \\
 \frac{\mathrm{d}[\mathrm{complex}]}{\mathrm{d}t} &= k_{on}[\mathrm{target}][\mathrm{enzyme}] -  k_{off}[\mathrm{complex}] - k_{cat}[\mathrm{complex}] \\
 \frac{\mathrm{d}[\mathrm{enzyme}]}{\mathrm{d}t} &= -k_{on}[\mathrm{target}][\mathrm{enzyme}] + k_{off}[\mathrm{complex}] + k_{cat}[\mathrm{complex}] \\
 \end{align}

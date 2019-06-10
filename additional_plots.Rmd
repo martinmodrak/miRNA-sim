@@ -1,0 +1,90 @@
+---
+title: "Plots for the main paper"
+output: pdf_document
+---
+
+```{r setup, message=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(cowplot) #Optional, can be commented out
+library(knitr)
+library(here)
+library(readxl)
+
+temp_dir <- "local_temp_data"
+if(!dir.exists(temp_dir)) {
+  dir.create(temp_dir)
+}
+```
+
+```{r}
+luciferase_file <- here("private_data", "190603 for martin.xlsx")
+luciferase_data <-  read_excel(luciferase_file, sheet = "Nanoluc-20 hours-mammals", range = "A2:B100")
+names(luciferase_data) <- c("Condition", "Activity")
+
+luciferase_data <- luciferase_data %>%
+  filter(Condition != "") %>%
+  separate(Condition, into = c("Animal_raw", "Binding"), sep = " ") %>%
+  mutate(Animal = factor(Animal_raw, levels = c("mouse","pig","cow"), labels = c("Mouse","Porcine","Bovine")))
+
+luciferase_base_plot <-   luciferase_data %>%
+    ggplot(aes(x = Binding, y = Activity, color = Binding))
+
+luciferase_boxplot <- luciferase_base_plot +
+      geom_boxplot() +
+      #stat_summary() +
+      #stat_summary(geom = "errorbar") +
+      #geom_hline(aes(yintercept = Activity), stat = stat_summary() +
+      geom_jitter(width = 0.1, height = 0) +
+      scale_color_manual(values = c("#405b74", "#ff0000", "#a5a5a5")) +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+Version 1: (I sliiiiightly prefer this)
+
+```{r, fig.height=3.5, fig.width=4.7}
+luciferase_plot_1 <- luciferase_boxplot +     
+  facet_wrap(~Animal) +
+  guides(color = FALSE)
+
+luciferase_plot_1
+```
+
+Version 2: 
+
+```{r, fig.height=3, fig.width=6}
+
+luciferase_boxplot + 
+  facet_wrap(~Animal, strip.position = "bottom") +
+  theme(axis.text.x = element_blank(),
+        strip.placement = "outside",
+        strip.background =  element_blank(),
+        axis.ticks.x = element_blank())
+
+```
+
+version 3:
+I can also stretch the vertical axis to include 0:
+
+```{r, fig.height=4, fig.width=4.7}
+luciferase_plot_1 +
+  expand_limits(y = 0)
+```
+
+Version 4:
+Finally, there can be only mean +/- se instead of the boxplot, but I don't like it very much. I also removed the jitter as this IMHO looks better without it.
+
+```{r, fig.height=4, fig.width=4.7}
+luciferase_base_plot +
+  geom_point(position = position_dodge(width = 0.1), alpha = 0.3) +
+  stat_summary(geom = "errorbar", fun.data = "mean_se") +
+  stat_summary(geom = "point", fun.y = "mean", size = 3) +
+  scale_color_manual(values = c("#405b74", "#ff0000", "#a5a5a5")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  facet_wrap(~Animal) +
+  guides(color = FALSE)
+```
+
