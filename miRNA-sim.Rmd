@@ -320,7 +320,7 @@ plot_efficiency_surface <- function(to_show, time_h, fixed_data, for_paper = FAL
    geom_raster() + 
    geom_point(data = fixed_data, mapping = aes(x = miRNA_concentration, y = min_target_concentration / 3, shape = condition), inherit.aes = FALSE, size = 2) +
    fixed_data_highlight +
-   scale_fill_gradient("Target uncleaved", high = "#505050", low = "#f0f0f0", limits = c(0,1)) +
+   scale_fill_gradient("Target uncleaved", high = "#000000", low = "#f8f8f8", limits = c(0,1)) +
    scale_linetype_manual(values = c("solid","dotted")) + 
    scale_shape_manual("Condition", values = c("triangle","triangle open")) +
    facet_wrap(~k_cat_coeff, labeller= labeller(k_cat_coeff = function(x) {paste0("Rel. eff. = ",x)})) +

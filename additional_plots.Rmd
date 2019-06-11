@@ -29,62 +29,31 @@ luciferase_data <- luciferase_data %>%
   filter(Condition != "") %>%
   separate(Condition, into = c("Animal_raw", "Binding"), sep = " ") %>%
   mutate(Animal = factor(Animal_raw, levels = c("mouse","pig","cow"), labels = c("Mouse","Porcine","Bovine")))
-
-luciferase_base_plot <-   luciferase_data %>%
-    ggplot(aes(x = Binding, y = Activity, color = Binding))
-
-luciferase_boxplot <- luciferase_base_plot +
-      geom_boxplot() +
-      #stat_summary() +
-      #stat_summary(geom = "errorbar") +
-      #geom_hline(aes(yintercept = Activity), stat = stat_summary() +
-      geom_jitter(width = 0.1, height = 0) +
-      scale_color_manual(values = c("#405b74", "#ff0000", "#a5a5a5")) +
-      theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 ```
 
-Version 1: (I sliiiiightly prefer this)
 
-```{r, fig.height=3.5, fig.width=4.7}
-luciferase_plot_1 <- luciferase_boxplot +     
-  facet_wrap(~Animal) +
-  guides(color = FALSE)
-
-luciferase_plot_1
-```
-
-Version 2: 
-
-```{r, fig.height=3, fig.width=6}
-
-luciferase_boxplot + 
-  facet_wrap(~Animal, strip.position = "bottom") +
-  theme(axis.text.x = element_blank(),
-        strip.placement = "outside",
-        strip.background =  element_blank(),
-        axis.ticks.x = element_blank())
-
-```
-
-version 3:
-I can also stretch the vertical axis to include 0:
-
-```{r, fig.height=4, fig.width=4.7}
-luciferase_plot_1 +
-  expand_limits(y = 0)
-```
-
-Version 4:
-Finally, there can be only mean +/- se instead of the boxplot, but I don't like it very much. I also removed the jitter as this IMHO looks better without it.
-
-```{r, fig.height=4, fig.width=4.7}
-luciferase_base_plot +
-  geom_point(position = position_dodge(width = 0.1), alpha = 0.3) +
-  stat_summary(geom = "errorbar", fun.data = "mean_se") +
-  stat_summary(geom = "point", fun.y = "mean", size = 3) +
+```{r, fig.height=4, fig.width=6}
+luciferase_plot <- luciferase_data %>%
+  ggplot(aes(x = Binding, y = Activity, color = Binding, shape = Binding)) +
+  stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5) +
+  stat_summary(geom = "errorbar", fun.y = "mean", aes(ymax = ..y.., ymin = ..y..), color = "black") +
+  geom_point(position = position_jitter(width = 0.25)) +
   scale_color_manual(values = c("#405b74", "#ff0000", "#a5a5a5")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
   facet_wrap(~Animal) +
-  guides(color = FALSE)
+  guides(color = guide_legend(override.aes = list(alpha = 1, linetype = 0))) + 
+  expand_limits(y = 0) + scale_y_continuous(expand = expand_scale(mult = c(0, .05)))
+
+
+luciferase_plot
+```
+
+```{r}
+luciferase_width = 6
+luciferase_height = 4
+for(type in c(".png",".svg")) {
+  ggsave(paste0(temp_dir,"/luciferse", type), luciferase_plot, width = luciferase_width, height = luciferase_height)
+}
+
 ```
 
