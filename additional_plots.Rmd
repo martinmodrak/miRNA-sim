@@ -21,6 +21,12 @@ if(!dir.exists(temp_dir)) {
 ```
 
 ```{r}
+animals_levels_raw <- c("mouse","pig","cow")
+animals_labels <- c("Mouse","Porcine","Bovine")
+```
+
+
+```{r}
 luciferase_file <- here("private_data", "190603 for martin.xlsx")
 luciferase_data <-  read_excel(luciferase_file, sheet = "Nanoluc-20 hours-mammals", range = "A2:B100")
 names(luciferase_data) <- c("Condition", "Activity")
@@ -28,31 +34,94 @@ names(luciferase_data) <- c("Condition", "Activity")
 luciferase_data <- luciferase_data %>%
   filter(Condition != "") %>%
   separate(Condition, into = c("Animal_raw", "Binding"), sep = " ") %>%
-  mutate(Animal = factor(Animal_raw, levels = c("mouse","pig","cow"), labels = c("Mouse","Porcine","Bovine")))
-```
-
-
-```{r, fig.height=4, fig.width=6}
-luciferase_plot <- luciferase_data %>%
-  ggplot(aes(x = Binding, y = Activity, color = Binding, shape = Binding)) +
-  stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5) +
-  stat_summary(geom = "errorbar", fun.y = "mean", aes(ymax = ..y.., ymin = ..y..), color = "black") +
-  geom_point(position = position_jitter(width = 0.25)) +
-  scale_color_manual(values = c("#405b74", "#ff0000", "#a5a5a5")) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
-  facet_wrap(~Animal) +
-  guides(color = guide_legend(override.aes = list(alpha = 1, linetype = 0))) + 
-  expand_limits(y = 0) + scale_y_continuous(expand = expand_scale(mult = c(0, .05)))
-
-
-luciferase_plot
+  mutate(Animal = factor(Animal_raw, levels = animals_levels_raw, labels = animals_labels))
 ```
 
 ```{r}
-luciferase_width = 6
-luciferase_height = 4
+base_plot <- function(data, x, y) {
+  x <- enquo(x)
+  y <- enquo(y)
+  ggplot(data, aes(x = !!x, y = !!y, color = !!x, shape = !!x)) +
+    stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5) +
+    stat_summary(geom = "errorbar", fun.y = "mean", aes(ymax = ..y.., ymin = ..y..), color = "black") +
+    geom_point(position = position_jitter(width = 0.25)) +
+    scale_color_manual(values = c("#405b74", "#ff0000", "#a5a5a5")) +
+    theme(axis.text.x = element_blank(), axis.title.x = element_blank(), axis.ticks.x = element_blank()) +
+    guides(color = guide_legend(override.aes = list(alpha = 1, linetype = 0))) + 
+    expand_limits(y = 0) + scale_y_continuous(expand = expand_scale(mult = c(0, .05)))
+}
+
+plots <- list()
+widths <- list()
+```
+
+
+```{r, fig.height=3, fig.width=6}
+plots$luciferase <- luciferase_data %>%
+  base_plot(Binding, Activity) +
+  facet_wrap(~Animal)
+
+
+plots$luciferase
+```
+
+
+```{r, fig.height=3, fig.width=6}
+combined_file <- here("private_data", "190612 for martin.xlsx")
+miR30c_data <- read_excel(combined_file, sheet = "miR-30c mammals") %>% 
+  mutate(Animal = factor(Animal, levels = animals_labels))
+plots$miR30c <- base_plot(miR30c_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
+plots$miR30c
+```
+
+```{r, fig.height = 3, fig.width = 3.5}
+let7a_porcine_data <- read_excel(combined_file, sheet = "Let-7a porcine 40hours", col_names = c("Animal","Reporter","Activity"))
+plots$let7a_porcine <- base_plot(let7a_porcine_data, Reporter, Activity)
+widths$let7a_porcine <- 3.5
+plots$let7a_porcine
+```
+
+```{r, fig.height=3, fig.width=5}
+let7_miR_3t3_data <- read_excel(combined_file, sheet = "Let-7a and miR-30c 3t3")
+plots$let7_miR_3t3 <- base_plot(let7_miR_3t3_data, Reporter, `Relative nanoluc activity`) +
+  facet_wrap(~miRNA)
+widths$let7_miR_3t3 <- 5
+
+plots$let7_miR_3t3
+```
+
+```{r, fig.height=3, fig.width=6}
+number_mimic_levels <- c("500k","250k", "100k")
+porcine_mimics_data <- read_excel(combined_file, sheet = "porcine mimics") %>%
+  mutate(number_mimic = factor(`number of mimic molecules`, levels = number_mimic_levels))
+plots$porcine_mimics <- base_plot(porcine_mimics_data, Reporter, `Relative nanoluc activity`) +
+  facet_wrap(~number_mimic)
+
+plots$porcine_mimics
+```
+
+```{r, fig.height=3, fig.width=6}
+number_mimic_levels <- c("500k","250k", "100k")
+mouse_mimics_data <- read_excel(combined_file, sheet = "mouse mimics") %>%
+  mutate(number_mimic = factor(`number of mimic molecules`, levels = number_mimic_levels))
+plots$mouse_mimics <- base_plot(mouse_mimics_data, Reporter, `Relative nanoluc activity`) +
+  facet_wrap(~number_mimic)
+
+plots$mouse_mimics
+```
+
+```{r}
+three_groups_width = 6
+base_height = 3
 for(type in c(".png",".svg")) {
-  ggsave(paste0(temp_dir,"/luciferse", type), luciferase_plot, width = luciferase_width, height = luciferase_height)
+  for(plot_name in names(plots)) {
+    if(!is.null(widths[[plot_name]])) {
+      width = widths[[plot_name]]
+    } else {
+      width = three_groups_width
+    }
+    ggsave(paste0(temp_dir,"/", plot_name, type), plots[[plot_name]], width = width, height = base_height)
+  }
 }
 
 ```
