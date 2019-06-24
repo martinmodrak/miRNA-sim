@@ -39,12 +39,30 @@ luciferase_data <- luciferase_data %>%
 
 ```{r}
 base_plot <- function(data, x, y) {
+  # The large_point version
+  # mean_in_color = TRUE
+  # line_size = 1
+  # point_size = 2.25
+
+  # THe small_points version
+  mean_in_color = FALSE
+  line_size = 1
+  point_size = 1.5
+  
   x <- enquo(x)
   y <- enquo(y)
+  
+  if(mean_in_color) {
+    mean_summary <- stat_summary(geom = "errorbar", fun.y = "mean", aes(ymax = ..y.., ymin = ..y..), size = line_size)
+  } else {
+    mean_summary <- stat_summary(geom = "errorbar", fun.y = "mean", aes(ymax = ..y.., ymin = ..y..), color = "black", size = line_size)
+  }
+
+  
   ggplot(data, aes(x = !!x, y = !!y, color = !!x, shape = !!x)) +
-    stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5) +
-    stat_summary(geom = "errorbar", fun.y = "mean", aes(ymax = ..y.., ymin = ..y..), color = "black") +
-    geom_point(position = position_jitter(width = 0.25)) +
+    stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5, size = line_size) +
+    mean_summary +
+    geom_point(position = position_jitter(width = 0.25), size = point_size) +
     scale_color_manual(values = c("#405b74", "#ff0000", "#a5a5a5")) +
     theme(axis.text.x = element_blank(), axis.title.x = element_blank(), axis.ticks.x = element_blank()) +
     guides(color = guide_legend(override.aes = list(alpha = 1, linetype = 0))) + 
