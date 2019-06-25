@@ -3,6 +3,14 @@ title: "Plots for the main paper"
 output: pdf_document
 ---
 
+2D and 2E same vertical axis (1.6) step 0.2
+3A and 3B same vertical axis (1.4)
+
+lighter color bar to mean
+
+mean the same color
+larger points
+
 ```{r setup, message=FALSE, echo=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 library(ggplot2)
@@ -21,15 +29,14 @@ if(!dir.exists(temp_dir)) {
 ```
 
 ```{r}
-animals_levels_raw <- c("mouse","pig","cow")
-animals_labels <- c("Mouse","Porcine","Bovine")
+animals_levels_raw <- c("mouse","cow","pig")
+animals_labels <- c("Mouse","Bovine","Porcine")
 ```
 
 
 ```{r}
 luciferase_file <- here("private_data", "190603 for martin.xlsx")
-luciferase_data <-  read_excel(luciferase_file, sheet = "Nanoluc-20 hours-mammals", range = "A2:B100")
-names(luciferase_data) <- c("Condition", "Activity")
+luciferase_data <-  read_excel(luciferase_file, sheet = "Nanoluc-20 hours-mammals", range = "A2:B100", col_names = c("Condition", "Activity"))
 
 luciferase_data <- luciferase_data %>%
   filter(Condition != "") %>%
@@ -38,16 +45,16 @@ luciferase_data <- luciferase_data %>%
 ```
 
 ```{r}
-base_plot <- function(data, x, y) {
+base_plot <- function(data, x, y, y_expand = c()) {
   # The large_point version
-  # mean_in_color = TRUE
-  # line_size = 1
-  # point_size = 2.25
+  mean_in_color = TRUE
+  line_size = 1
+  point_size = 2.25
 
   # THe small_points version
-  mean_in_color = FALSE
-  line_size = 1
-  point_size = 1.5
+  # mean_in_color = FALSE
+  # line_size = 1
+  # point_size = 1.5
   
   x <- enquo(x)
   y <- enquo(y)
@@ -58,15 +65,18 @@ base_plot <- function(data, x, y) {
     mean_summary <- stat_summary(geom = "errorbar", fun.y = "mean", aes(ymax = ..y.., ymin = ..y..), color = "black", size = line_size)
   }
 
+  y_breaks <- seq(0, max(pull(data,!!y) + 1.999), by = 0.2)
   
-  ggplot(data, aes(x = !!x, y = !!y, color = !!x, shape = !!x)) +
+  ggplot(data, aes(x = !!x, y = !!y, color = !!x, fill = !!x, shape = !!x)) +
+    stat_summary(geom = "bar", fun.data = "mean_se", width = 0.9, alpha = 0.15, color = NA) +
     stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5, size = line_size) +
     mean_summary +
-    geom_point(position = position_jitter(width = 0.25), size = point_size) +
+    geom_point(position = position_jitter(width = 0.35, height = 0), size = point_size) +
     scale_color_manual(values = c("#405b74", "#ff0000", "#a5a5a5")) +
+    scale_fill_manual(values = c("#405b74", "#ff0000", "#a5a5a5")) +
     theme(axis.text.x = element_blank(), axis.title.x = element_blank(), axis.ticks.x = element_blank()) +
-    guides(color = guide_legend(override.aes = list(alpha = 1, linetype = 0))) + 
-    expand_limits(y = 0) + scale_y_continuous(expand = expand_scale(mult = c(0, .05)))
+    guides(color = guide_legend(override.aes = list(alpha = 1, linetype = 0, fill = NA))) + 
+    expand_limits(y = c(0, y_expand)) + scale_y_continuous(expand = expand_scale(mult = c(0, .05)), breaks = y_breaks)
 }
 
 plots <- list()
@@ -74,15 +84,17 @@ widths <- list()
 ```
 
 
+Fig 2D
 ```{r, fig.height=3, fig.width=6}
 plots$luciferase <- luciferase_data %>%
-  base_plot(Binding, Activity) +
+  base_plot(Binding, Activity, y_expand = c(0, 1.6)) +
   facet_wrap(~Animal)
 
 
 plots$luciferase
 ```
 
+Fig S2 C
 
 ```{r, fig.height=3, fig.width=6}
 combined_file <- here("private_data", "190612 for martin.xlsx")
@@ -92,12 +104,16 @@ plots$miR30c <- base_plot(miR30c_data, Reporter, `Relative nanoluc activity`) + 
 plots$miR30c
 ```
 
+Fig 2E
+
 ```{r, fig.height = 3, fig.width = 3.5}
 let7a_porcine_data <- read_excel(combined_file, sheet = "Let-7a porcine 40hours", col_names = c("Animal","Reporter","Activity"))
-plots$let7a_porcine <- base_plot(let7a_porcine_data, Reporter, Activity)
+plots$let7a_porcine <- base_plot(let7a_porcine_data, Reporter, Activity, y_expand = 1.6) + facet_wrap(~Animal)
 widths$let7a_porcine <- 3.5
 plots$let7a_porcine
 ```
+
+Fig S2B
 
 ```{r, fig.height=3, fig.width=5}
 let7_miR_3t3_data <- read_excel(combined_file, sheet = "Let-7a and miR-30c 3t3")
@@ -108,21 +124,25 @@ widths$let7_miR_3t3 <- 5
 plots$let7_miR_3t3
 ```
 
+Fig. 3B
+
 ```{r, fig.height=3, fig.width=6}
 number_mimic_levels <- c("500k","250k", "100k")
 porcine_mimics_data <- read_excel(combined_file, sheet = "porcine mimics") %>%
   mutate(number_mimic = factor(`number of mimic molecules`, levels = number_mimic_levels))
-plots$porcine_mimics <- base_plot(porcine_mimics_data, Reporter, `Relative nanoluc activity`) +
+plots$porcine_mimics <- base_plot(porcine_mimics_data, Reporter, `Relative nanoluc activity`, y_expand = 1.4) +
   facet_wrap(~number_mimic)
 
 plots$porcine_mimics
 ```
 
+Fig 3A
+
 ```{r, fig.height=3, fig.width=6}
 number_mimic_levels <- c("500k","250k", "100k")
 mouse_mimics_data <- read_excel(combined_file, sheet = "mouse mimics") %>%
   mutate(number_mimic = factor(`number of mimic molecules`, levels = number_mimic_levels))
-plots$mouse_mimics <- base_plot(mouse_mimics_data, Reporter, `Relative nanoluc activity`) +
+plots$mouse_mimics <- base_plot(mouse_mimics_data, Reporter, `Relative nanoluc activity`, y_expand = 1.4) +
   facet_wrap(~number_mimic)
 
 plots$mouse_mimics

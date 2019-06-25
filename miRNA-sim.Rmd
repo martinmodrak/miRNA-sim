@@ -13,8 +13,8 @@ Notes:
 [x] Check concetrations in line with table
 [x] Render without rectangles for concentration
 [x] Log scale by each order 1 10 100
-[] Rewrite the assumptions for results
-[] Plots for luciferase assays
+[x] Rewrite the assumptions for results
+[x] Plots for luciferase assays
 
 ```{r setup, message=FALSE}
 #knitr::opts_chunk$set(echo = FALSE)
