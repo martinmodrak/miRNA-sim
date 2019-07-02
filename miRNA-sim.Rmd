@@ -1,20 +1,12 @@
 ---
 title: "Simple miRNA computational modelling"
 author: "Martin Modrak"
-date: "`r format(Sys.time(), '%d %B, %Y')`"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
 output:
   html_document:
     code_folding: hide
-abstract: "This is a supplement to the paper <TODO: paper title>. We describe a simplified mathematical model of the miRNA pathway based on our knowledge of the RNAi pathway."
+abstract: 'This is a supplement to the paper "Low miRNA abundance disables microRNA pathway in mammalian oocytes". We describe a simplified mathematical model of the miRNA pathway based on our knowledge of the RNAi pathway and show simulation results supporting the conclusions of the paper.'
 ---
-
-Notes: 
-[x] rel. eff. 0.1 instead of 0.05 ? .
-[x] Check concetrations in line with table
-[x] Render without rectangles for concentration
-[x] Log scale by each order 1 10 100
-[x] Rewrite the assumptions for results
-[x] Plots for luciferase assays
 
 ```{r setup, message=FALSE}
 #knitr::opts_chunk$set(echo = FALSE)
@@ -466,3 +458,15 @@ We see that even with the exact same miRNA degradation kinetics, all target mRNA
 # Conclusions
 
 Both views of the simulations show that it is plausible for the differing stochiometry to account for differing miRNA activity in somatic cells and oocytes.
+
+# Original computing environment
+
+```{r, cache=FALSE}
+git_rev <- tryCatch({system("git rev-parse HEAD", intern=TRUE)}, error = function(e) {"Could not read Git revision"})
+```
+
+This report was built from Git revision ``r git_rev`` on `r format(Sys.time(), "%d %B, %Y")`
+
+```{r}
+sessionInfo()
+```
