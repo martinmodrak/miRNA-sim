@@ -21,6 +21,8 @@ library(cowplot) #Optional, can be commented out
 library(knitr)
 options(dplyr.show_progress = FALSE)
 
+theme_set(theme_cowplot())
+
 temp_dir <- "local_temp_data"
 if(!dir.exists(temp_dir)) {
   dir.create(temp_dir)
@@ -33,6 +35,7 @@ if(!dir.exists(temp_dir)) {
 
 * miRNA degradation is modelled as one step process (similar to RNAi pathway), but with lower catalytic efficiency than the RNAi pathways
 * The AGO2 concentration is assumed to not be rate limiting, in particular all miRNA is assumed to be loaded on AGO2 at all times
+  * [Kingston & Bartel 2019](http://dx.doi.org/10.1101/gr.251421.119 ) report that "duplexes  are rapidly loaded int o Argonaute , with < 10 min typically required for duplex loading and silencing-complex maturation", which makes the assumption roughly justified for the time scales of hours.
 * The concentration of AGO2 + miRNA complex is assumed to be constant.
 * All miRNA binding events are assumed to be those of pure seed pairing (for seed + additionial base pairing the binding is slightly stronger).
 * Only uncleaved free mRNA is observed in experiments (mRNA bound in complex with AGO2 + miRNA is not be observed).
@@ -79,6 +82,11 @@ volume_3T3 <- 3e-12 #4.4e-12
 total_RNA_3T3 <- 5e5
 
 volume_mouse_oocyte <- 260e-12
+
+params_base <- c(k_on = k_on_miRNA, 
+                 k_off = k_off_miRNA,
+                 k_cat_max = k_cat_RNAi
+                )
 
 
 one_step_degradation <- function(t, state, parameters) {
@@ -127,13 +135,11 @@ We note that the $k_{cat}$ value for the RNAi pathway in the source ($`r k_cat_R
 For the following we use the RNAi $k_{cat}$ as reported. 
 
 ```{r}
-miRNA_sim_single <- function(condition, times, init_complex_equilibrium = TRUE) {
-  params <- c(k_cat = k_cat_RNAi * condition$k_cat_coeff, 
-              k_on = k_on_miRNA, 
-              k_off = k_off_miRNA,
-              synthesis = condition$synthesis
-              )
-  
+miRNA_sim_single <- function(condition, times, params_base, init_complex_equilibrium = TRUE) {
+  params <- params_base
+  params["k_cat"] <- params["k_cat_max"] * condition$k_cat_coeff
+  params["synthesis"] <- condition$synthesis
+
   total_target <- condition$total_target
   total_enzyme <- condition$total_enzyme
   
@@ -263,10 +269,11 @@ read_from_file <- FALSE
 temp_file <- paste0(temp_dir, "/concentration.rds")
 if(file.exists(temp_file)) {
   results_from_file <- readRDS(temp_file)
-  if(nrow(results_from_file) == nrow(all_conditions_concentration) * length(times_concentration) * 3 && 
-     identical(all_conditions_concentration, results_from_file %>% select(total_enzyme, total_target, k_cat_coeff) %>% distinct())) {
+  if(identical(results_from_file$params_base, params_base) &&
+    nrow(results_from_file$res) == nrow(all_conditions_concentration) * length(times_concentration) * 3 && 
+     identical(all_conditions_concentration, results_from_file$res %>% select(total_enzyme, total_target, k_cat_coeff) %>% distinct())) {
     read_from_file <- TRUE
-    sim_results_concentration <- results_from_file
+    sim_results_concentration <- results_from_file$res
   } else {
     warning("Data read, but are different")
   }
@@ -276,9 +283,9 @@ if(!read_from_file) {
   sim_results_concentration <- all_conditions_concentration %>%
     mutate(synthesis = 0
            ) %>%
-    rowwise() %>% do(miRNA_sim_single(., times_concentration, init_complex_equilibrium = TRUE)) %>% ungroup()
+    rowwise() %>% do(miRNA_sim_single(., times_concentration, params_base = params_base, init_complex_equilibrium = TRUE)) %>% ungroup()
   
-  saveRDS(sim_results_concentration, temp_file)
+  saveRDS(list(res = sim_results_concentration, params_base = params_base), temp_file)
 }
 ```
 
@@ -396,10 +403,11 @@ read_from_file <- FALSE
 temp_file <- paste0(temp_dir, "/cells.rds")
 if(file.exists(temp_file)) {
   results_from_file <- readRDS(temp_file)
-  if(nrow(results_from_file) == nrow(all_conditions_cells) * length(times_cells) * 3 && 
-     identical(all_conditions_cells, results_from_file %>% select(name, volume, total_RNA, excess_RNA_synthesis, fraction_of_total_RNA, miRNA_count, k_cat_coeff) %>% distinct())) {
+  if(identical(results_from_file$params, params_base) &&
+     nrow(results_from_file$res) == nrow(all_conditions_cells) * length(times_cells) * 3 && 
+     identical(all_conditions_cells, results_from_file$res %>% select(name, volume, total_RNA, excess_RNA_synthesis, fraction_of_total_RNA, miRNA_count, k_cat_coeff) %>% distinct())) {
     read_from_file <- TRUE
-    sim_results_cells <- results_from_file
+    sim_results_cells <- results_from_file$res
   } else {
     warning("Data read, but are different")
   }
@@ -412,9 +420,9 @@ if(!read_from_file) {
            total_enzyme = miRNA_count / (volume * mole_unit)
   
            ) %>%
-    rowwise() %>% do(miRNA_sim_single(., times_cells, init_complex_equilibrium = TRUE)) %>% ungroup()
+    rowwise() %>% do(miRNA_sim_single(., times_cells, params_base = params_base, init_complex_equilibrium = TRUE)) %>% ungroup()
   
-  saveRDS(sim_results_cells, temp_file)
+  saveRDS(list(res = sim_results_cells, params = params_base), temp_file)
 }
 ```
 
@@ -454,6 +462,80 @@ sim_results_cells %>%group_by(fraction_of_total_RNA) %>% do(plot_concentration_s
 ```
 
 We see that even with the exact same miRNA degradation kinetics, all target mRNA is expected to be quickly degraded in 3T3 cells across a broad range of conditions, while in oocytes we don't see noticeable degradation in most conditions.
+
+# Robustness
+
+```{r}
+N_steps_sparse = 20
+if(log_scale) {
+  miRNA_concentrations_sparse = seq(log(min_miRNA_concentration), log(max_miRNA_concentration), length.out = N_steps_sparse) %>% exp()
+  target_concentrations_sparse = seq(log(min_target_concentration), log(max_target_concentration), length.out = N_steps_sparse) %>% exp()
+} else {
+  miRNA_concentrations_sparse = seq(min_miRNA_concentration, max_miRNA_concentration, length.out = N_steps_sparse)
+  target_concentrations_sparse = seq(min_target_concentration, max_target_concentration, length.out = N_steps_sparse)
+}
+
+all_conditions_concentration_sparse <- tibble(total_enzyme = miRNA_concentrations_sparse) %>%
+  crossing(tibble(total_target = target_concentrations_sparse)) %>%
+  crossing(k_cat_coeff = k_cat_coeffs_concentration) 
+```
+
+
+```{r computing_model_concentration_robustness}
+param_variants <- list()
+titles <- list()
+
+robust_step <- 10
+all_mods <- c(robust_step, 1, 1/robust_step)
+next_index <- 1
+for(k_on_mod in all_mods) {
+  for(k_off_mod in all_mods) {
+    for(k_cat_max_mod in all_mods) {
+      param_variant <- params_base
+      param_variant["k_on"] <- params_base["k_on"] * k_on_mod
+      param_variant["k_off"] <- params_base["k_off"] * k_off_mod
+      param_variant["k_cat_max"] <- params_base["k_cat_max"] * k_cat_max_mod
+      
+      param_variants[[next_index]] <- param_variant
+      titles[[next_index]] <- paste0("k_on * ", k_on_mod, ", k_off * ", k_off_mod, ", k_cat_max * ", k_cat_max_mod)
+      
+      next_index <- next_index + 1
+    }
+  }
+}
+
+read_from_file <- FALSE
+temp_file <- paste0(temp_dir, "/concentration_robustness.rds")
+if(file.exists(temp_file)) {
+  results_from_file <- readRDS(temp_file)
+  if(identical(results_from_file$param_variants, param_variants) &&
+    nrow(results_from_file$res[[1]]) == nrow(all_conditions_concentration_sparse) * length(times_concentration) * 3 &&
+     identical(all_conditions_concentration_sparse, results_from_file$res[[1]] %>% select(total_enzyme, total_target, k_cat_coeff) %>% distinct())) {
+    read_from_file <- TRUE
+    results_robustness <- results_from_file$res
+  } else {
+    warning("Data read, but are different")
+  }
+}
+
+if(!read_from_file) {
+  results_robustness <- list()
+  for(i in 1:length(param_variants)) {
+    results_robustness[[i]] <- all_conditions_concentration_sparse %>%
+      mutate(synthesis = 0
+             ) %>%
+      rowwise() %>% do(miRNA_sim_single(., times_concentration, params_base = param_variants[[i]], init_complex_equilibrium = TRUE)) %>% ungroup()
+  }
+  
+  saveRDS(list(res = results_robustness, param_variants = param_variants), temp_file)
+}
+```
+
+```{r, fig.height=3.5, fig.width=9}
+for(i in 1:length(param_variants)) {
+  (plot_efficiency_surface(results_robustness[[i]], 20, cell_info) + ggtitle(titles[[i]])) %>% print()
+}
+```
 
 # Conclusions
 
