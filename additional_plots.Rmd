@@ -17,10 +17,12 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(tibble)
-library(cowplot) #Optional, can be commented out
 library(knitr)
 library(here)
 library(readxl)
+
+library(cowplot) #Optional, can be commented out
+theme_set(cowplot::theme_cowplot())
 
 temp_dir <- "local_temp_data"
 if(!dir.exists(temp_dir)) {
@@ -45,7 +47,7 @@ luciferase_data <- luciferase_data %>%
 ```
 
 ```{r}
-base_plot <- function(data, x, y, y_expand = c()) {
+base_plot <- function(data, x, y, y_expand = c(0, 1.65)) {
   # The large_point version
   mean_in_color = TRUE
   line_size = 1
@@ -68,15 +70,15 @@ base_plot <- function(data, x, y, y_expand = c()) {
   y_breaks <- seq(0, max(pull(data,!!y) + 1.999), by = 0.2)
   
   ggplot(data, aes(x = !!x, y = !!y, color = !!x, fill = !!x, shape = !!x)) +
-    stat_summary(geom = "bar", fun.data = "mean_se", width = 0.9, alpha = 0.15, color = NA) +
+    stat_summary(geom = "bar", fun.data = "mean_se", width = 0.9, color = NA) +
     stat_summary(geom = "errorbar", fun.data = "mean_se", width = 0.5, size = line_size) +
     mean_summary +
     geom_point(position = position_jitter(width = 0.35, height = 0), size = point_size) +
-    scale_color_manual(values = c("#0000CD", "#ff0000", "#505050")) +
-    scale_fill_manual(values = c("#0000CD", "#ff0000", "#505050")) +
+    scale_color_manual(values = c("#0077ff", "#ff0000", "#505050")) +
+    scale_fill_manual(values = c("#d8eaff", "#ffd8d8", "#e5e5e5")) +
     theme(axis.text.x = element_blank(), axis.title.x = element_blank(), axis.ticks.x = element_blank()) +
     guides(color = guide_legend(override.aes = list(alpha = 1, linetype = 0, fill = NA))) + 
-    expand_limits(y = c(0, y_expand)) + scale_y_continuous(expand = expand_scale(mult = c(0, .05)), breaks = y_breaks)
+    expand_limits(y = y_expand) + scale_y_continuous(expand = expand_scale(mult = c(0, .05)), breaks = y_breaks)
 }
 
 plots <- list()
@@ -87,7 +89,7 @@ widths <- list()
 Fig 2D
 ```{r, fig.height=3, fig.width=6}
 plots$luciferase <- luciferase_data %>%
-  base_plot(Binding, Activity, y_expand = c(0, 1.6)) +
+  base_plot(Binding, Activity) +
   facet_wrap(~Animal)
 
 
@@ -107,8 +109,8 @@ plots$miR30c
 Fig 2E
 
 ```{r, fig.height = 3, fig.width = 3.5}
-let7a_porcine_data <- read_excel(combined_file, sheet = "Let-7a porcine 40hours", col_names = c("Animal","Reporter","Activity"), range = "A1:C10")
-plots$let7a_porcine <- base_plot(let7a_porcine_data, Reporter, Activity, y_expand = 1.6) + facet_wrap(~Animal)
+let7a_porcine_data <- read_excel(combined_file, sheet = "Let-7a porcine 40hours", col_names = c("Animal","Reporter","Relative nanoluc activity"), range = "A1:C10")
+plots$let7a_porcine <- base_plot(let7a_porcine_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
 widths$let7a_porcine <- 3.5
 plots$let7a_porcine
 ```
@@ -130,7 +132,7 @@ Fig. 3B
 number_mimic_levels <- c("500k","250k", "100k")
 porcine_mimics_data <- read_excel(combined_file, sheet = "porcine mimics") %>%
   mutate(number_mimic = factor(`number of mimic molecules`, levels = number_mimic_levels))
-plots$porcine_mimics <- base_plot(porcine_mimics_data, Reporter, `Relative nanoluc activity`, y_expand = 1.4) +
+plots$porcine_mimics <- base_plot(porcine_mimics_data, Reporter, `Relative nanoluc activity`) +
   facet_wrap(~number_mimic)
 
 plots$porcine_mimics
@@ -142,10 +144,46 @@ Fig 3A
 number_mimic_levels <- c("500k","250k", "100k")
 mouse_mimics_data <- read_excel(combined_file, sheet = "mouse mimics") %>%
   mutate(number_mimic = factor(`number of mimic molecules`, levels = number_mimic_levels))
-plots$mouse_mimics <- base_plot(mouse_mimics_data, Reporter, `Relative nanoluc activity`, y_expand = 1.4) +
+plots$mouse_mimics <- base_plot(mouse_mimics_data, Reporter, `Relative nanoluc activity`) +
   facet_wrap(~number_mimic)
 
 plots$mouse_mimics
+```
+
+```{r, fig.height = 3, fig.width = 3.5}
+growing_oocytes_data <- read_excel(combined_file, sheet = "Growing oocytes (mouse)", col_names = c("Animal","Reporter","Relative nanoluc activity"), range = "A1:C10")
+plots$growing_oocytes <- base_plot(growing_oocytes_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
+widths$growing_oocytes <- 3.5
+plots$growing_oocytes
+```
+
+
+```{r, fig.height = 3, fig.width = 3.5}
+mouse_100k_NL_data <- read_excel(combined_file, sheet = "mouse 100k NL")
+plots$mouse_100k_NL <- base_plot(mouse_100k_NL_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
+widths$mouse_100k_NL <- 3.5
+plots$mouse_100k_NL
+```
+
+```{r, fig.height = 3, fig.width = 3.5}
+mouse_100k_NL_mimic_data <- read_excel(combined_file, sheet = "mouse 100k NL+250k mimic")
+plots$mouse_100k_NL_mimic <- base_plot(mouse_100k_NL_mimic_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
+widths$mouse_100k_NL_mimic <- 3.5
+plots$mouse_100k_NL_mimic
+```
+
+```{r, fig.height = 3, fig.width = 3.5}
+let7_mouse_combined_data <- read_excel(combined_file, sheet = "Let7a mouse(combined)")
+plots$let7_mouse_combined <- base_plot(let7_mouse_combined_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
+widths$let7_mouse_combined <- 3.5
+plots$let7_mouse_combined
+```
+
+```{r, fig.height = 3, fig.width = 3.5}
+let7_mouse_femto_data <- read_excel(combined_file, sheet = "Let7a mouse(femto)")
+plots$let7_mouse_femto <- base_plot(let7_mouse_femto_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
+widths$let7_mouse_femto <- 3.5
+plots$let7_mouse_femto
 ```
 
 ```{r}
