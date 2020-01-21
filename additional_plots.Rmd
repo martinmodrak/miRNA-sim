@@ -1,18 +1,10 @@
 ---
-title: "Plots for the main paper"
+title: "Plots and p-values for the main paper"
 output: pdf_document
 ---
 
-2D and 2E same vertical axis (1.6) step 0.2
-3A and 3B same vertical axis (1.4)
-
-lighter color bar to mean
-
-mean the same color
-larger points
-
 ```{r setup, message=FALSE, echo=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
 library(ggplot2)
 library(dplyr)
 library(tidyr)
@@ -35,16 +27,6 @@ animals_levels_raw <- c("mouse","cow","pig")
 animals_labels <- c("Mouse","Bovine","Porcine")
 ```
 
-
-```{r}
-luciferase_file <- here("private_data", "190603 for martin.xlsx")
-luciferase_data <-  read_excel(luciferase_file, sheet = "Nanoluc-20 hours-mammals", range = "A2:B100", col_names = c("Condition", "Activity"))
-
-luciferase_data <- luciferase_data %>%
-  filter(Condition != "") %>%
-  separate(Condition, into = c("Animal_raw", "Binding"), sep = " ") %>%
-  mutate(Animal = factor(Animal_raw, levels = animals_levels_raw, labels = animals_labels))
-```
 
 ```{r}
 base_plot <- function(data, x, y, y_expand = c(0, 1.65)) {
@@ -85,9 +67,70 @@ plots <- list()
 widths <- list()
 ```
 
+```{r}
+compute_p_values_single <- function(data, g, method_sufffix = "") {
+  data_animal <- data %>% filter(group == g)
+  res <- list()
+  nextItem <- 1
+  
+  perfect <- data_animal %>% filter(Reporter == "1x-perfect") %>% pull(response)
+  bulged <- data_animal %>% filter(Reporter == "4x-bulged") %>% pull(response)
+  mutant <- data_animal %>% filter(Reporter == "4x-mutant") %>% pull(response)
+  res[[nextItem]] <- data.frame(group = g, Method = paste0("t-test", method_sufffix), 
+                                  p_perfect_mutant = t.test(perfect, mutant,var.equal = FALSE)$p.value,
+                                  p_bulged_mutant = t.test(bulged, mutant,var.equal = FALSE)$p.value)
+  nextItem <- nextItem + 1
+  res[[nextItem]] <- data.frame(group = g, Method = paste0("t-test - equal variance", method_sufffix), 
+                                p_perfect_mutant = t.test(perfect, mutant,var.equal = TRUE)$p.value,
+                                p_bulged_mutant = t.test(bulged, mutant,var.equal = TRUE)$p.value)
+  nextItem <- nextItem + 1
+  tukey_res <- TukeyHSD(aov(lm(response ~ Reporter, data_animal)))$Reporter
+
+  res[[nextItem]] <- data.frame(group = g, Method = paste0("TukeyHSD", method_sufffix), 
+                                p_perfect_mutant = tukey_res["4x-mutant-1x-perfect", "p adj"],
+                                p_bulged_mutant = tukey_res["4x-mutant-4x-bulged", "p adj"])
+  nextItem <- nextItem + 1
+  
+  do.call(rbind, res)
+}
+
+compute_p_values <- function(data, response = `Relative nanoluc activity`, group = Animal) {
+  res <- list()
+  data <- data %>% mutate(response = {{ response }}, group = {{ group }})
+  nextItem <- 1
+  for(g in unique(data$group)) {
+    res[[nextItem]] <- compute_p_values_single(data, g)
+    nextItem <- nextItem + 1
+    res[[nextItem]] <- compute_p_values_single(data %>% mutate(response = log(response)), g, " - log")
+    nextItem <- nextItem + 1
+  }
+  
+  do.call(rbind, res)
+}
+
+
+summarise_p_values <- function(data, response = `Relative nanoluc activity`, group = Animal) {
+compute_p_values(data, {{ response }}, {{group }}) %>% group_by(group) %>% 
+  summarise(min_p_p_perfect_mutant = min(p_perfect_mutant), max_p_perfect_mutant = max(p_perfect_mutant), 
+            min_p_bulged_mutant = min(p_bulged_mutant), max_p_bulged_mutant = max(p_bulged_mutant)) %>%
+  knitr::kable()
+}
+
+```
+
+### Nanoluc-20 hours-mammals
 
 Fig 2D
 ```{r, fig.height=3, fig.width=6}
+luciferase_file <- here("private_data", "190603 for martin.xlsx")
+luciferase_data <-  read_excel(luciferase_file, sheet = "Nanoluc-20 hours-mammals", range = "A2:B100", col_names = c("Condition", "Activity"))
+
+luciferase_data <- luciferase_data %>%
+  filter(Condition != "") %>%
+  separate(Condition, into = c("Animal_raw", "Binding"), sep = " ") %>%
+  mutate(Animal = factor(Animal_raw, levels = animals_levels_raw, labels = animals_labels))
+
+
 plots$luciferase <- luciferase_data %>%
   base_plot(Binding, Activity) +
   facet_wrap(~Animal)
@@ -95,6 +138,12 @@ plots$luciferase <- luciferase_data %>%
 
 plots$luciferase
 ```
+
+```{r}
+summarise_p_values(luciferase_data %>% mutate(Reporter = Binding), Activity)
+```
+
+### miR-30c mammals
 
 Fig S2 C
 
@@ -106,6 +155,12 @@ plots$miR30c <- base_plot(miR30c_data, Reporter, `Relative nanoluc activity`) + 
 plots$miR30c
 ```
 
+```{r}
+summarise_p_values(miR30c_data)
+```
+
+### Let-7a porcine 40hours
+
 Fig 2E
 
 ```{r, fig.height = 3, fig.width = 3.5}
@@ -114,6 +169,12 @@ plots$let7a_porcine <- base_plot(let7a_porcine_data, Reporter, `Relative nanoluc
 widths$let7a_porcine <- 3.5
 plots$let7a_porcine
 ```
+
+```{r}
+summarise_p_values(let7a_porcine_data)
+```
+
+### Let-7a and miR-30c 3t3
 
 Fig S2B
 
@@ -125,6 +186,13 @@ widths$let7_miR_3t3 <- 5
 
 plots$let7_miR_3t3
 ```
+
+```{r}
+summarise_p_values(let7_miR_3t3_data, group = miRNA)
+```
+
+
+### porcine mimics
 
 Fig. 3B
 
@@ -138,6 +206,11 @@ plots$porcine_mimics <- base_plot(porcine_mimics_data, Reporter, `Relative nanol
 plots$porcine_mimics
 ```
 
+```{r}
+summarise_p_values(porcine_mimics_data, group = number_mimic)
+```
+
+### mouse mimics
 Fig 3A
 
 ```{r, fig.height=3, fig.width=6}
@@ -150,6 +223,13 @@ plots$mouse_mimics <- base_plot(mouse_mimics_data, Reporter, `Relative nanoluc a
 plots$mouse_mimics
 ```
 
+```{r}
+summarise_p_values(mouse_mimics_data, group = number_mimic)
+```
+
+### Growing oocytes (mouse)
+
+
 ```{r, fig.height = 3, fig.width = 3.5}
 growing_oocytes_data <- read_excel(combined_file, sheet = "Growing oocytes (mouse)", col_names = c("Animal","Reporter","Relative nanoluc activity"), range = "A1:C10")
 plots$growing_oocytes <- base_plot(growing_oocytes_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
@@ -157,6 +237,11 @@ widths$growing_oocytes <- 3.5
 plots$growing_oocytes
 ```
 
+```{r}
+summarise_p_values(growing_oocytes_data)
+```
+
+### mouse 100k NL
 
 ```{r, fig.height = 3, fig.width = 3.5}
 mouse_100k_NL_data <- read_excel(combined_file, sheet = "mouse 100k NL")
@@ -165,12 +250,24 @@ widths$mouse_100k_NL <- 3.5
 plots$mouse_100k_NL
 ```
 
+```{r}
+summarise_p_values(mouse_100k_NL_data)
+```
+
+### mouse 100k NL+250k mimic
+
 ```{r, fig.height = 3, fig.width = 3.5}
 mouse_100k_NL_mimic_data <- read_excel(combined_file, sheet = "mouse 100k NL+250k mimic")
 plots$mouse_100k_NL_mimic <- base_plot(mouse_100k_NL_mimic_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
 widths$mouse_100k_NL_mimic <- 3.5
 plots$mouse_100k_NL_mimic
 ```
+
+```{r}
+summarise_p_values(mouse_100k_NL_mimic_data)
+```
+
+### Let7a mouse(combined)
 
 ```{r, fig.height = 3, fig.width = 3.5}
 let7_mouse_combined_data <- read_excel(combined_file, sheet = "Let7a mouse(combined)")
@@ -179,12 +276,23 @@ widths$let7_mouse_combined <- 3.5
 plots$let7_mouse_combined
 ```
 
+```{r}
+summarise_p_values(let7_mouse_combined_data)
+```
+
+### Let7a mouse(femto)
+
 ```{r, fig.height = 3, fig.width = 3.5}
 let7_mouse_femto_data <- read_excel(combined_file, sheet = "Let7a mouse(femto)")
 plots$let7_mouse_femto <- base_plot(let7_mouse_femto_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
 widths$let7_mouse_femto <- 3.5
 plots$let7_mouse_femto
 ```
+
+```{r}
+summarise_p_values(let7_mouse_femto_data)
+```
+
 
 ```{r}
 three_groups_width = 6
