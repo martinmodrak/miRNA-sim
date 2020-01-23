@@ -58,6 +58,7 @@ base_plot <- function(data, x, y, y_expand = c(0, 1.65)) {
     geom_point(position = position_jitter(width = 0.35, height = 0), size = point_size) +
     scale_color_manual(values = c("#0077ff", "#ff0000", "#505050")) +
     scale_fill_manual(values = c("#d8eaff", "#ffd8d8", "#e5e5e5")) +
+    #scale_shape_manual(values = c(1, 2, 0)) +
     theme(axis.text.x = element_blank(), axis.title.x = element_blank(), axis.ticks.x = element_blank()) +
     guides(color = guide_legend(override.aes = list(alpha = 1, linetype = 0, fill = NA))) + 
     expand_limits(y = y_expand) + scale_y_continuous(expand = expand_scale(mult = c(0, .05)), breaks = y_breaks)
@@ -133,7 +134,8 @@ luciferase_data <- luciferase_data %>%
 
 plots$luciferase <- luciferase_data %>%
   base_plot(Binding, Activity) +
-  facet_wrap(~Animal)
+  facet_wrap(~Animal) 
+
 
 
 plots$luciferase
@@ -297,7 +299,7 @@ summarise_p_values(let7_mouse_femto_data)
 ```{r}
 three_groups_width = 6
 base_height = 3
-for(type in c(".png",".wmf")) {
+for(type in c(".png",".svg")) {
   for(plot_name in names(plots)) {
     if(!is.null(widths[[plot_name]])) {
       width = widths[[plot_name]]
@@ -305,6 +307,20 @@ for(type in c(".png",".wmf")) {
       width = three_groups_width
     }
     ggsave(paste0(temp_dir,"/", plot_name, type), plots[[plot_name]], width = width, height = base_height)
+  }
+}
+
+```
+
+```{r}
+inkscape_path <-'C:/Program Files/Inkscape/inkscape.exe'
+if(!file.exists(inkscape_path)) {
+  warning("Could not find inkscape, will not convert to .emf")
+} else {
+  for(plot_name in names(plots)) {
+    input_file <- paste0(temp_dir,"/", plot_name, ".svg")
+    output_file <- paste0(temp_dir,"/", plot_name, ".emf")
+    system(paste0('"', inkscape_path,'"', ' --file "', input_file, '" --export-emf "', output_file, '"'))
   }
 }
 
