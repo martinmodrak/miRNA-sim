@@ -315,12 +315,12 @@ for(type in c(".png",".svg")) {
 ```{r}
 inkscape_path <-'C:/Program Files/Inkscape/inkscape.exe'
 if(!file.exists(inkscape_path)) {
-  warning("Could not find inkscape, will not convert to .emf")
+  warning("Could not find inkscape, will not convert to .wmf")
 } else {
   for(plot_name in names(plots)) {
     input_file <- paste0(temp_dir,"/", plot_name, ".svg")
-    output_file <- paste0(temp_dir,"/", plot_name, ".emf")
-    system(paste0('"', inkscape_path,'"', ' --file "', input_file, '" --export-emf "', output_file, '"'))
+    output_file <- paste0(temp_dir,"/", plot_name, ".wmf")
+    system(paste0('"', inkscape_path,'"', ' --file "', input_file, '" --export-ignore-filters --export-wmf "', output_file, '"'))
   }
 }
 

@@ -338,6 +338,7 @@ concentration_plot_for_paper <- plot_efficiency_surface(sim_results_concentratio
 for(type in c(".png",".svg")) {
   ggsave(paste0(temp_dir,"/simulation_concentrations", type), concentration_plot_for_paper, width = 9, height = 3.5)
 }
+  ggsave(paste0(temp_dir,"/simulation_concentrations_full.png"), plot_efficiency_surface(sim_results_concentration, 20, cell_info), width = 9, height = 3.5)
 
 
 ```
