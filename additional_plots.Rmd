@@ -150,7 +150,7 @@ summarise_p_values(luciferase_data %>% mutate(Reporter = Binding), Activity)
 Fig S2 C
 
 ```{r, fig.height=3, fig.width=6}
-combined_file <- here("private_data", "200115 for martin.xlsx")
+combined_file <- here("private_data", "200514 for martin.xlsx")
 miR30c_data <- read_excel(combined_file, sheet = "miR-30c mammals") %>% 
   mutate(Animal = factor(Animal, levels = animals_labels))
 plots$miR30c <- base_plot(miR30c_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
@@ -295,6 +295,10 @@ plots$let7_mouse_femto
 summarise_p_values(let7_mouse_femto_data)
 ```
 
+### mir30-c mimic
+
+
+### Saving plots for publication
 
 ```{r}
 three_groups_width = 6
