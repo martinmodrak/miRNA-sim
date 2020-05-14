@@ -297,6 +297,30 @@ summarise_p_values(let7_mouse_femto_data)
 
 ### mir30-c mimic
 
+```{r, fig.height = 3, fig.width = 3.5}
+mir30_c_mimic_data <- read_excel(combined_file, sheet = "mir-30c mimic(250k)")
+plots$mir30_c_mimic <- base_plot(mir30_c_mimic_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
+widths$mir30_c_mimic <- 3.5
+plots$mir30_c_mimic
+```
+
+```{r}
+summarise_p_values(mir30_c_mimic_data)
+```
+
+### mir30-c mimic sep.
+
+```{r, fig.height = 3, fig.width = 3.5}
+mir30_c_mimic_sep_data <- read_excel(combined_file, sheet = "mir-30c mimic(250k) sep")
+plots$mir30_c_mimic_sep <- base_plot(mir30_c_mimic_sep_data, Reporter, `Relative nanoluc activity`) + facet_wrap(~Animal)
+widths$mir30_c_mimic_sep <- 3.5
+plots$mir30_c_mimic_sep
+```
+
+```{r}
+summarise_p_values(mir30_c_mimic_sep_data)
+```
+
 
 ### Saving plots for publication
 
